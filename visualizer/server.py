@@ -28,10 +28,12 @@ def analytics_json():
     path = os.path.abspath(path)
     if not os.path.exists(path):
         return jsonify({
-            "policy": {},
-            "latency": [],
-            "throughput": {"windows": [], "summary": {}},
+            "policy": {"runs": [], "average": {}},
+            "latency": {"runs": [], "average": []},
+            "throughput": {"windows": [], "summary_runs": [], "summary_average": {}, "slo_p95_ms": 50.0},
+            "network_tps": {"runs": [], "average": {}},
             "audit": [],
+            "audit_summary": {},
         })
     with open(path) as f:
         return jsonify(json.load(f))

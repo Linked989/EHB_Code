@@ -1,2 +1,4 @@
-sustainable_eps,slo_p95_ms,overall_eps,overall_p95_ms
-9.0,50.0,9.0,0.021683529485017058
+run_id,round,sustainable_eps,slo_p95_ms,overall_eps,overall_p95_ms,event_count,duration_s,sla_met,sla_met_ratio
+run-1759592680813-0fcfd0,1,9.0,50.0,9.0,0.020589603809639808,9,1.0,True,
+run-1759592680813-e3795f,2,9.0,50.0,9.0,0.009441602742299438,9,1.0,True,
+AVERAGE,,9.0,50.0,9.0,0.015015603275969623,9.0,1.0,,1.0

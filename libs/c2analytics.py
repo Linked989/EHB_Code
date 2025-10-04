@@ -4,7 +4,6 @@ from __future__ import annotations
 import csv
 import json
 import math
-import os
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +26,33 @@ class EventLogRow:
     subject_id: Optional[str]
     run_id: Optional[str]
     run_started: Optional[float]
+
+
+def _group_runs(rows: List[EventLogRow]) -> List[Tuple[str, float, List[EventLogRow]]]:
+    if not rows:
+        return []
+    grouped: Dict[str, List[EventLogRow]] = defaultdict(list)
+    for row in rows:
+        run_key = row.run_id or "UNKNOWN"
+        grouped[run_key].append(row)
+    runs: List[Tuple[str, float, List[EventLogRow]]] = []
+    for run_id, run_rows in grouped.items():
+        start_candidates = [r.run_started for r in run_rows if r.run_started is not None]
+        if start_candidates:
+            start = min(float(s) for s in start_candidates)
+        else:
+            start = min(float(r.ts) for r in run_rows)
+        runs.append((run_id, start, sorted(run_rows, key=lambda r: r.ts)))
+    runs.sort(key=lambda item: item[1])
+    return runs
+
+
+def _limit_runs(runs: List[Tuple[str, float, List[EventLogRow]]], limit: Optional[int]) -> List[Tuple[str, float, List[EventLogRow]]]:
+    if limit is None or limit <= 0:
+        return runs
+    if len(runs) <= limit:
+        return runs
+    return runs[-limit:]
 
 
 def _percentile(values: List[float], pct: float) -> float:
@@ -75,17 +101,6 @@ def _load_event_rows(path: Path) -> List[EventLogRow]:
                 run_started=(float(extra["run_started"]) if isinstance(extra.get("run_started"), (float, int, str)) and str(extra.get("run_started")) not in ("", "None") else None),
             ))
     return rows
-
-
-def _latest_run_rows(rows: List[EventLogRow]) -> List[EventLogRow]:
-    runs: Dict[str, float] = {}
-    for row in rows:
-        if row.run_id and row.run_started is not None:
-            runs[row.run_id] = max(runs.get(row.run_id, float("-inf")), float(row.run_started))
-    if not runs:
-        return rows
-    latest_run_id = max(runs.items(), key=lambda kv: kv[1])[0]
-    return [row for row in rows if row.run_id == latest_run_id]
 
 
 def _safe_latency_list(values: Iterable[Optional[float]]) -> List[float]:
@@ -169,6 +184,9 @@ def _compute_throughput(rows: List[EventLogRow], slo_p95_ms: float) -> Tuple[Lis
         "slo_p95_ms": slo_p95_ms,
         "overall_eps": overall_eps,
         "overall_p95_ms": overall_p95,
+        "event_count": len(ordered),
+        "duration_s": duration,
+        "sla_met": overall_p95 <= slo_p95_ms,
     }
     return window_rows, summary
 
@@ -211,6 +229,14 @@ def _compute_audit_summary(records: List[Dict[str, float]]) -> Dict[str, float]:
     }
 
 
+def _average_fields(records: List[Dict[str, float]], keys: Iterable[str]) -> Dict[str, float]:
+    if not records:
+        return {k: 0.0 for k in keys}
+    return {
+        key: (sum(float(rec.get(key, 0.0)) for rec in records) / len(records)) for key in keys
+    }
+
+
 def _write_csv(path: Path, headers: List[str], rows: Iterable[Dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as f:
@@ -220,36 +246,189 @@ def _write_csv(path: Path, headers: List[str], rows: Iterable[Dict[str, object]]
             writer.writerow({k: row.get(k, "") for k in headers})
 
 
-def build_reports(metrics_csv_path: str, contract, out_dir: str = "data", slo_p95_ms: float = VALIDATION_SLO_P95_MS_DEFAULT) -> str:
+def build_reports(
+    metrics_csv_path: str,
+    contract,
+    out_dir: str = "data",
+    slo_p95_ms: float = VALIDATION_SLO_P95_MS_DEFAULT,
+    rounds: Optional[int] = None,
+) -> str:
     out_base = Path(out_dir)
     rows = _load_event_rows(Path(metrics_csv_path))
-    rows = _latest_run_rows(rows)
+    runs = _limit_runs(_group_runs(rows), rounds)
 
-    policy = _compute_policy_metrics(rows)
-    latency = _compute_latency_metrics(rows)
-    throughput_windows, throughput_summary = _compute_throughput(rows, slo_p95_ms)
+    policy_runs: List[Dict[str, float]] = []
+    latency_runs: List[Dict[str, float]] = []
+    throughput_windows: List[Dict[str, float]] = []
+    throughput_summary_runs: List[Dict[str, float]] = []
+    network_tps_runs: List[Dict[str, float]] = []
+
+    if runs:
+        for ordinal, (run_id, _, run_rows) in enumerate(runs, start=1):
+            policy_metrics = _compute_policy_metrics(run_rows)
+            policy_metrics.update({"run_id": run_id, "round": ordinal})
+            policy_runs.append(policy_metrics)
+
+            latency_metrics = _compute_latency_metrics(run_rows)
+            for entry in latency_metrics:
+                entry_copy = dict(entry)
+                entry_copy.update({"run_id": run_id, "round": ordinal})
+                latency_runs.append(entry_copy)
+
+            window_rows, summary = _compute_throughput(run_rows, slo_p95_ms)
+            for window_row in window_rows:
+                enriched = dict(window_row)
+                enriched.update({"run_id": run_id, "round": ordinal})
+                throughput_windows.append(enriched)
+
+            summary_enriched = dict(summary)
+            summary_enriched.update({"run_id": run_id, "round": ordinal})
+            throughput_summary_runs.append(summary_enriched)
+
+            network_tps_runs.append({
+                "run_id": run_id,
+                "round": ordinal,
+                "overall_eps": summary["overall_eps"],
+                "sustainable_eps": summary["sustainable_eps"],
+                "overall_p95_ms": summary["overall_p95_ms"],
+                "event_count": summary["event_count"],
+                "duration_s": summary["duration_s"],
+                "sla_met": summary["sla_met"],
+            })
+    else:
+        policy_runs.append({
+            "run_id": "NONE",
+            "round": 0,
+            "invalid_attempted": 0,
+            "invalid_accepted": 0,
+            "pv_ar": 0.0,
+            "valid_attempted": 0,
+            "valid_rejected": 0,
+            "frr": 0.0,
+        })
+
+    # Averages
+    policy_average = _average_fields(policy_runs, [
+        "invalid_attempted",
+        "invalid_accepted",
+        "pv_ar",
+        "valid_attempted",
+        "valid_rejected",
+        "frr",
+    ])
+    policy_average.update({"run_id": "AVERAGE", "round": ""})
+
+    latency_average: List[Dict[str, float]] = []
+    latency_by_type: Dict[str, List[Dict[str, float]]] = defaultdict(list)
+    for entry in latency_runs:
+        latency_by_type[entry["event_type"]].append(entry)
+    for event_type, items in sorted(latency_by_type.items()):
+        avg_entry = {
+            "run_id": "AVERAGE",
+            "round": "",
+            "event_type": event_type,
+            "count": sum(item.get("count", 0) for item in items) / len(items),
+            "p50_ms": sum(item.get("p50_ms", 0.0) for item in items) / len(items),
+            "p90_ms": sum(item.get("p90_ms", 0.0) for item in items) / len(items),
+            "p95_ms": sum(item.get("p95_ms", 0.0) for item in items) / len(items),
+            "mean_ms": sum(item.get("mean_ms", 0.0) for item in items) / len(items),
+        }
+        latency_average.append(avg_entry)
+
+    throughput_average = _average_fields(throughput_summary_runs, [
+        "sustainable_eps",
+        "overall_eps",
+        "overall_p95_ms",
+        "event_count",
+        "duration_s",
+    ])
+    throughput_average.update({
+        "run_id": "AVERAGE",
+        "round": "",
+        "slo_p95_ms": slo_p95_ms,
+        "sla_met_ratio": (
+            sum(1 for summary in throughput_summary_runs if summary.get("sla_met")) / len(throughput_summary_runs)
+            if throughput_summary_runs else 0.0
+        ),
+    })
+    throughput_average.setdefault("sla_met", "")
+
+    network_tps_average = _average_fields(network_tps_runs, [
+        "overall_eps",
+        "sustainable_eps",
+        "overall_p95_ms",
+        "event_count",
+        "duration_s",
+    ])
+    network_tps_average.update({
+        "run_id": "AVERAGE",
+        "round": "",
+        "sla_met": (
+            sum(1 for record in network_tps_runs if record.get("sla_met")) / len(network_tps_runs)
+            if network_tps_runs else 0.0
+        ),
+    })
+
     audit = _compute_audit_metrics(contract)
     audit_summary = _compute_audit_summary(audit)
 
-    _write_csv(out_base / "policy_metrics.csv", ["invalid_attempted", "invalid_accepted", "pv_ar", "valid_attempted", "valid_rejected", "frr"], [policy])
+    # CSV exports with per-run rows and average footer
+    policy_headers = ["run_id", "round", "invalid_attempted", "invalid_accepted", "pv_ar", "valid_attempted", "valid_rejected", "frr"]
+    _write_csv(out_base / "policy_metrics.csv", policy_headers, [*policy_runs, policy_average])
 
-    _write_csv(out_base / "latency_metrics.csv", ["event_type", "count", "p50_ms", "p90_ms", "p95_ms", "mean_ms"], latency)
+    latency_headers = ["run_id", "round", "event_type", "count", "p50_ms", "p90_ms", "p95_ms", "mean_ms"]
+    _write_csv(out_base / "latency_metrics.csv", latency_headers, [*latency_runs, *latency_average])
 
-    _write_csv(out_base / "throughput_windows.csv", ["window_start_s", "eps", "p95_ms", "count", "sla_met"], throughput_windows)
+    throughput_window_headers = ["run_id", "round", "window_start_s", "eps", "p95_ms", "count", "sla_met"]
+    _write_csv(out_base / "throughput_windows.csv", throughput_window_headers, throughput_windows)
 
-    throughput_summary_headers = ["sustainable_eps", "slo_p95_ms", "overall_eps", "overall_p95_ms"]
-    _write_csv(out_base / "throughput_summary.csv", throughput_summary_headers, [throughput_summary])
+    throughput_summary_headers = [
+        "run_id",
+        "round",
+        "sustainable_eps",
+        "slo_p95_ms",
+        "overall_eps",
+        "overall_p95_ms",
+        "event_count",
+        "duration_s",
+        "sla_met",
+        "sla_met_ratio",
+    ]
+    _write_csv(out_base / "throughput_summary.csv", throughput_summary_headers, [*throughput_summary_runs, throughput_average])
+
+    network_headers = [
+        "run_id",
+        "round",
+        "event_count",
+        "duration_s",
+        "overall_eps",
+        "sustainable_eps",
+        "overall_p95_ms",
+        "sla_met",
+    ]
+    _write_csv(out_base / "network_throughput.csv", network_headers, [*network_tps_runs, network_tps_average])
 
     _write_csv(out_base / "audit_resolution.csv", ["event_id", "event_type", "depth", "latency_ms"], audit)
-
     _write_csv(out_base / "audit_summary.csv", ["avg_latency_ms", "slope_ms_per_link"], [audit_summary])
 
     analytics = {
-        "policy": policy,
-        "latency": latency,
+        "policy": {
+            "runs": policy_runs,
+            "average": policy_average,
+        },
+        "latency": {
+            "runs": latency_runs,
+            "average": latency_average,
+        },
         "throughput": {
             "windows": throughput_windows,
-            "summary": throughput_summary,
+            "summary_runs": throughput_summary_runs,
+            "summary_average": throughput_average,
+            "slo_p95_ms": slo_p95_ms,
+        },
+        "network_tps": {
+            "runs": network_tps_runs,
+            "average": network_tps_average,
         },
         "audit": audit,
         "audit_summary": audit_summary,

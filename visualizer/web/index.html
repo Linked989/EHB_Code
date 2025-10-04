@@ -46,6 +46,7 @@
       <div class="legend">
         <span><i style="background:#4e79a7;"></i>p50</span>
         <span><i style="background:#f28e2b;"></i>p90</span>
+        <span><i style="background:#333; border-radius:50%; height:10px; width:10px;"></i>Run p90 points</span>
       </div>
       <div class="metric-summary" id="latency-summary"></div>
     </div>
@@ -53,10 +54,21 @@
       <h2>Throughput vs SLO</h2>
       <svg id="throughput-chart" class="chart"></svg>
       <div class="legend">
-        <span><i style="background:#8cd17d;"></i>SLA Met</span>
-        <span><i style="background:#e15759;"></i>SLA Breached</span>
+        <span><i style="background:#4e79a7;"></i>Overall EPS</span>
+        <span><i style="background:#8cd17d;"></i>Sustainable EPS</span>
+        <span><i style="background:#2d4a90;"></i>Average</span>
       </div>
       <div class="metric-summary" id="throughput-summary"></div>
+    </div>
+    <div class="metric-card">
+      <h2>Network TPS</h2>
+      <svg id="tps-chart" class="chart"></svg>
+      <div class="legend">
+        <span><i style="background:#4e79a7;"></i>Overall EPS</span>
+        <span><i style="background:#8cd17d;"></i>Sustainable EPS</span>
+        <span><i style="background:#2d4a90; height:2px; width:18px; border-radius:0;"></i>Average</span>
+      </div>
+      <div class="metric-summary" id="tps-summary"></div>
     </div>
     <div class="metric-card">
       <h2>Audit Path Resolution</h2>
@@ -67,15 +79,22 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <script>
     const zeroFallback = value => Number.isFinite(value) ? value : 0;
+    const percentFromRatio = value => `${(zeroFallback(value) * 100).toFixed(2)}%`;
+    const percentDirect = value => `${zeroFallback(value).toFixed(2)}%`;
+    const fmtMs = value => `${zeroFallback(value).toFixed(2)} ms`;
+    const fmtMs1 = value => `${zeroFallback(value).toFixed(1)} ms`;
+    const fmtNumber = value => zeroFallback(value).toFixed(2);
 
     Promise.all([
       fetch('/graph.json').then(r => r.json()),
       fetch('/analytics.json').then(r => r.json())
     ]).then(([graph, analytics]) => {
+      analytics = analytics || {};
       renderGraph(graph || {nodes:[], links:[]});
-      renderPolicy(analytics.policy || {});
-      renderLatency(analytics.latency || []);
-      renderThroughput(analytics.throughput || {});
+      renderPolicy(analytics.policy || {runs: [], average: {}});
+      renderLatency(analytics.latency || {runs: [], average: []});
+      renderThroughput(analytics.throughput || {summary_runs: [], summary_average: {}, windows: [], slo_p95_ms: 50});
+      renderNetworkTPS(analytics.network_tps || {runs: [], average: {}});
       renderAudit(analytics.audit || [], analytics.audit_summary || {});
     }).catch(err => {
       console.error('Failed to load data', err);
@@ -156,30 +175,64 @@
       });
     }
 
-    function renderPolicy(policy) {
+    function renderPolicy(policyData) {
       const svg = d3.select('#policy-chart');
       svg.selectAll('*').remove();
       const node = svg.node();
       const width = node ? node.clientWidth : 320;
-      const height = node ? node.clientHeight : 200;
+      const height = node ? node.clientHeight : 220;
       svg.attr('viewBox', `0 0 ${width} ${height}`);
 
-      const data = [
-        { label: 'PV-AR', value: zeroFallback(policy.pv_ar) * 100 },
-        { label: 'FRR', value: zeroFallback(policy.frr) * 100 }
-      ];
+      const runs = policyData.runs || [];
+      const average = policyData.average || {};
 
-      const margin = { top: 20, right: 16, bottom: 36, left: 44 };
+      if (!runs.length && !Number.isFinite(average.pv_ar)) {
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', height / 2)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#888')
+          .text('No policy samples yet');
+        document.getElementById('policy-summary').textContent = '';
+        return;
+      }
+
+      const dataset = runs.map(run => ({
+        label: run.round ? `R${run.round}` : (run.run_id || 'Run'),
+        pv: zeroFallback(run.pv_ar) * 100,
+        frr: zeroFallback(run.frr) * 100,
+        isAverage: false,
+        meta: run,
+      }));
+
+      const avgPv = zeroFallback(average.pv_ar) * 100;
+      const avgFrr = zeroFallback(average.frr) * 100;
+      if (runs.length) {
+        dataset.push({
+          label: 'Avg',
+          pv: avgPv,
+          frr: avgFrr,
+          isAverage: true,
+          meta: average,
+        });
+      }
+
+      const margin = { top: 24, right: 16, bottom: 40, left: 52 };
       const chartWidth = width - margin.left - margin.right;
       const chartHeight = height - margin.top - margin.bottom;
 
-      const maxValue = Math.max(1, d3.max(data, d => d.value) || 0);
-
-      const x = d3.scaleBand()
-        .domain(data.map(d => d.label))
+      const x0 = d3.scaleBand()
+        .domain(dataset.map(d => d.label))
         .range([0, chartWidth])
-        .padding(0.4);
+        .padding(0.28);
 
+      const keys = ['pv', 'frr'];
+      const x1 = d3.scaleBand()
+        .domain(keys)
+        .range([0, x0.bandwidth()])
+        .padding(0.18);
+
+      const maxValue = Math.max(1, d3.max(dataset, d => Math.max(d.pv, d.frr)) || 1);
       const y = d3.scaleLinear()
         .domain([0, maxValue])
         .nice()
@@ -189,56 +242,60 @@
 
       g.append('g')
         .attr('transform', `translate(0,${chartHeight})`)
-        .call(d3.axisBottom(x));
+        .call(d3.axisBottom(x0));
 
       g.append('g')
-        .call(d3.axisLeft(y).ticks(5).tickFormat(d => d + '%'));
+        .call(d3.axisLeft(y).ticks(5).tickFormat(d => `${d}%`));
 
-      g.append('line')
-        .attr('x1', 0)
-        .attr('x2', chartWidth)
-        .attr('y1', y(0))
-        .attr('y2', y(0))
-        .attr('stroke', '#888')
-        .attr('stroke-dasharray', '4,4');
+      const groups = g.selectAll('g.round')
+        .data(dataset)
+        .join('g')
+        .attr('class', 'round')
+        .attr('transform', d => `translate(${x0(d.label)},0)`);
 
-      g.selectAll('.bar')
-        .data(data)
+      groups.selectAll('rect')
+        .data(d => keys.map(key => ({ key, value: d[key], parent: d })))
         .join('rect')
-        .attr('class', 'bar')
-        .attr('x', d => x(d.label))
+        .attr('x', d => x1(d.key))
         .attr('y', d => y(d.value))
-        .attr('width', x.bandwidth())
+        .attr('width', x1.bandwidth())
         .attr('height', d => chartHeight - y(d.value))
-        .attr('fill', '#4e79a7');
+        .attr('fill', d => {
+          if (d.key === 'pv') {
+            return d.parent.isAverage ? '#2d4a90' : '#4e79a7';
+          }
+          return d.parent.isAverage ? '#f5a25d' : '#f28e2b';
+        })
+        .attr('opacity', d => d.parent.isAverage ? 0.85 : 1.0);
 
-      g.selectAll('.label')
-        .data(data)
+      groups.selectAll('text')
+        .data(d => keys.map(key => ({ key, value: d[key] })))
         .join('text')
-        .attr('x', d => x(d.label) + x.bandwidth() / 2)
-        .attr('y', d => y(d.value) - 6)
+        .attr('x', d => x1(d.key) + x1.bandwidth() / 2)
+        .attr('y', d => y(d.value) - 4)
         .attr('text-anchor', 'middle')
-        .attr('font-size', 12)
+        .attr('font-size', 11)
         .attr('fill', '#333')
-        .text(d => d.value.toFixed(2) + '%');
+        .text(d => `${d.value.toFixed(2)}%`);
 
       const summary = document.getElementById('policy-summary');
-      const invalidAttempted = policy.invalid_attempted ?? 0;
-      const invalidAccepted = policy.invalid_accepted ?? 0;
-      const validAttempted = policy.valid_attempted ?? 0;
-      const validRejected = policy.valid_rejected ?? 0;
-      summary.textContent = `Invalid attempts: ${invalidAttempted}, accepted: ${invalidAccepted}. Valid attempts: ${validAttempted}, rejected: ${validRejected}. Target PV-AR = 0%.`;
+      const totalInvalid = runs.reduce((acc, run) => acc + (run.invalid_attempted || 0), 0);
+      const totalValid = runs.reduce((acc, run) => acc + (run.valid_attempted || 0), 0);
+      summary.textContent = `Rounds: ${runs.length}. Avg PV-AR ${avgPv.toFixed(2)}%, Avg FRR ${avgFrr.toFixed(2)}%. Invalid attempts/run ≈ ${fmtNumber(policyData.average?.invalid_attempted || (totalInvalid / Math.max(runs.length, 1)))}; valid attempts/run ≈ ${fmtNumber(policyData.average?.valid_attempted || (totalValid / Math.max(runs.length, 1)))}.`;
     }
 
-    function renderLatency(latency) {
+    function renderLatency(latencyData) {
       const svg = d3.select('#latency-chart');
       svg.selectAll('*').remove();
       const node = svg.node();
       const width = node ? node.clientWidth : 320;
-      const height = node ? node.clientHeight : 200;
+      const height = node ? node.clientHeight : 220;
       svg.attr('viewBox', `0 0 ${width} ${height}`);
 
-      if (!latency.length) {
+      const averages = latencyData.average || [];
+      const runs = latencyData.runs || [];
+
+      if (!averages.length && !runs.length) {
         svg.append('text')
           .attr('x', width / 2)
           .attr('y', height / 2)
@@ -249,18 +306,18 @@
         return;
       }
 
-      const metrics = latency.map(entry => ({
+      const data = (averages.length ? averages : runs).map(entry => ({
         event_type: entry.event_type,
         p50_ms: zeroFallback(entry.p50_ms),
         p90_ms: zeroFallback(entry.p90_ms)
       }));
 
-      const margin = { top: 20, right: 16, bottom: 42, left: 48 };
+      const margin = { top: 24, right: 16, bottom: 44, left: 54 };
       const chartWidth = width - margin.left - margin.right;
       const chartHeight = height - margin.top - margin.bottom;
 
       const x0 = d3.scaleBand()
-        .domain(metrics.map(d => d.event_type))
+        .domain(data.map(d => d.event_type))
         .range([0, chartWidth])
         .padding(0.25);
 
@@ -268,9 +325,9 @@
       const x1 = d3.scaleBand()
         .domain(keys)
         .range([0, x0.bandwidth()])
-        .padding(0.15);
+        .padding(0.18);
 
-      const maxValue = d3.max(metrics, d => Math.max(d.p50_ms, d.p90_ms)) || 1;
+      const maxValue = d3.max(data, d => Math.max(d.p50_ms, d.p90_ms)) || 1;
       const y = d3.scaleLinear()
         .domain([0, maxValue])
         .nice()
@@ -281,16 +338,14 @@
         .range(['#4e79a7', '#f28e2b']);
 
       const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
-
       g.append('g')
         .attr('transform', `translate(0,${chartHeight})`)
         .call(d3.axisBottom(x0));
-
       g.append('g')
         .call(d3.axisLeft(y).ticks(5));
 
       const groups = g.selectAll('g.layer')
-        .data(metrics)
+        .data(data)
         .join('g')
         .attr('transform', d => `translate(${x0(d.event_type)},0)`);
 
@@ -307,101 +362,222 @@
         .data(d => keys.map(key => ({ key, value: d[key] })))
         .join('text')
         .attr('x', d => x1(d.key) + x1.bandwidth() / 2)
-        .attr('y', d => y(d.value) - 6)
+        .attr('y', d => y(d.value) - 5)
         .attr('text-anchor', 'middle')
         .attr('font-size', 11)
         .text(d => d.value.toFixed(1));
 
+      const runPoints = runs.map(entry => ({
+        event_type: entry.event_type,
+        p90_ms: zeroFallback(entry.p90_ms),
+        round: entry.round,
+      }));
+
+      g.append('g')
+        .selectAll('circle')
+        .data(runPoints)
+        .join('circle')
+        .attr('cx', d => x0(d.event_type) + x1('p90_ms') + x1.bandwidth() / 2)
+        .attr('cy', d => y(d.p90_ms))
+        .attr('r', 4)
+        .attr('fill', '#333')
+        .attr('opacity', 0.55);
+
       const summary = document.getElementById('latency-summary');
-      const maxP90 = d3.max(metrics, d => d.p90_ms) || 0;
-      summary.textContent = `p90 range: 0 – ${maxP90.toFixed(1)} ms. Aim to keep commands within your SLO.`;
+      const maxP90 = d3.max(data, d => d.p90_ms) || 0;
+      summary.textContent = `Rounds: ${runs.length || 1}. Avg p90 across types ≤ ${maxP90.toFixed(1)} ms; run markers show per-round p90 values.`;
     }
 
-    function renderThroughput(throughput) {
+    function renderThroughput(throughputData) {
       const svg = d3.select('#throughput-chart');
       svg.selectAll('*').remove();
       const node = svg.node();
       const width = node ? node.clientWidth : 320;
-      const height = node ? node.clientHeight : 200;
+      const height = node ? node.clientHeight : 220;
       svg.attr('viewBox', `0 0 ${width} ${height}`);
 
-      const windows = throughput.windows || [];
-      const summary = throughput.summary || {};
-      const slo = zeroFallback(summary.slo_p95_ms) || 50;
+      const runs = throughputData.summary_runs || [];
+      const average = throughputData.summary_average || {};
+      const slo = zeroFallback(throughputData.slo_p95_ms);
 
-      if (!windows.length) {
+      if (!runs.length && !Number.isFinite(average.overall_eps)) {
         svg.append('text')
           .attr('x', width / 2)
           .attr('y', height / 2)
           .attr('text-anchor', 'middle')
           .attr('fill', '#888')
           .text('No throughput samples yet');
-        document.getElementById('throughput-summary').textContent = `SLO (p95) = ${slo.toFixed(1)} ms.`;
+        document.getElementById('throughput-summary').textContent = '';
         return;
       }
 
-      const margin = { top: 20, right: 16, bottom: 40, left: 54 };
+      const dataset = runs.map(run => ({
+        label: run.round ? `R${run.round}` : (run.run_id || 'Run'),
+        eps: zeroFallback(run.overall_eps),
+        sustainable: zeroFallback(run.sustainable_eps),
+        slaMet: !!run.sla_met,
+        isAverage: false,
+      }));
+
+      if (Number.isFinite(average.overall_eps)) {
+        dataset.push({
+          label: 'Avg',
+          eps: zeroFallback(average.overall_eps),
+          sustainable: zeroFallback(average.sustainable_eps),
+          slaMet: zeroFallback(average.sla_met_ratio) >= 1,
+          isAverage: true,
+        });
+      }
+
+      const margin = { top: 24, right: 16, bottom: 44, left: 58 };
       const chartWidth = width - margin.left - margin.right;
       const chartHeight = height - margin.top - margin.bottom;
 
-      const maxTime = d3.max(windows, d => d.window_start_s) + 1;
-      const maxEps = d3.max(windows, d => d.eps) || 1;
+      const x0 = d3.scaleBand()
+        .domain(dataset.map(d => d.label))
+        .range([0, chartWidth])
+        .padding(0.28);
 
-      const x = d3.scaleLinear()
-        .domain([0, maxTime])
-        .range([0, chartWidth]);
+      const keys = ['eps', 'sustainable'];
+      const x1 = d3.scaleBand()
+        .domain(keys)
+        .range([0, x0.bandwidth()])
+        .padding(0.2);
 
+      const maxValue = d3.max(dataset, d => Math.max(d.eps, d.sustainable)) || 1;
       const y = d3.scaleLinear()
-        .domain([0, maxEps])
+        .domain([0, maxValue * 1.1])
         .nice()
         .range([chartHeight, 0]);
 
       const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
-
       g.append('g')
         .attr('transform', `translate(0,${chartHeight})`)
-        .call(d3.axisBottom(x).ticks(windows.length));
-
+        .call(d3.axisBottom(x0));
       g.append('g')
         .call(d3.axisLeft(y));
 
-      const line = d3.line()
-        .x(d => x(d.window_start_s + 0.5))
-        .y(d => y(d.eps))
-        .curve(d3.curveMonotoneX);
+      const groups = g.selectAll('g.run')
+        .data(dataset)
+        .join('g')
+        .attr('transform', d => `translate(${x0(d.label)},0)`);
 
-      g.append('path')
-        .datum(windows)
-        .attr('fill', 'none')
-        .attr('stroke', '#4e79a7')
-        .attr('stroke-width', 2)
-        .attr('d', line);
+      groups.selectAll('rect')
+        .data(d => keys.map(key => ({ key, value: d[key], parent: d })))
+        .join('rect')
+        .attr('x', d => x1(d.key))
+        .attr('y', d => y(d.value))
+        .attr('width', x1.bandwidth())
+        .attr('height', d => chartHeight - y(d.value))
+        .attr('fill', d => {
+          if (d.key === 'eps') {
+            if (d.parent.isAverage) return '#2d4a90';
+            return d.parent.slaMet ? '#4e79a7' : '#e15759';
+          }
+          return d.parent.isAverage ? '#74c476' : '#8cd17d';
+        })
+        .attr('opacity', d => d.parent.isAverage ? 0.88 : 1.0);
 
-      g.selectAll('circle')
-        .data(windows)
-        .join('circle')
-        .attr('cx', d => x(d.window_start_s + 0.5))
-        .attr('cy', d => y(d.eps))
-        .attr('r', 5)
-        .attr('fill', d => d.sla_met ? '#8cd17d' : '#e15759')
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 1.5);
+      g.append('line')
+        .attr('x1', 0)
+        .attr('x2', chartWidth)
+        .attr('y1', y(average.overall_eps || 0))
+        .attr('y2', y(average.overall_eps || 0))
+        .attr('stroke', '#2d4a90')
+        .attr('stroke-dasharray', '6,4')
+        .attr('opacity', Number.isFinite(average.overall_eps) ? 0.8 : 0);
 
-      const sustainable = zeroFallback(summary.sustainable_eps);
-      if (sustainable > 0) {
-        g.append('line')
-          .attr('x1', 0)
-          .attr('x2', chartWidth)
-          .attr('y1', y(sustainable))
-          .attr('y2', y(sustainable))
-          .attr('stroke', '#8cd17d')
-          .attr('stroke-dasharray', '6,4');
+      const summaryEl = document.getElementById('throughput-summary');
+      const slaRatio = zeroFallback(average.sla_met_ratio) * 100;
+      summaryEl.textContent = `Rounds: ${runs.length}. Avg overall EPS ${fmtNumber(average.overall_eps || 0)}; sustainable ${fmtNumber(average.sustainable_eps || 0)}. ${slaRatio.toFixed(1)}% of rounds met SLO (p95 ≤ ${fmtNumber(slo)} ms).`;
+    }
+
+    function renderNetworkTPS(tpsData) {
+      const svg = d3.select('#tps-chart');
+      svg.selectAll('*').remove();
+      const node = svg.node();
+      const width = node ? node.clientWidth : 320;
+      const height = node ? node.clientHeight : 220;
+      svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+      const runs = tpsData.runs || [];
+      const average = tpsData.average || {};
+
+      if (!runs.length && !Number.isFinite(average.overall_eps)) {
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', height / 2)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#888')
+          .text('No TPS samples yet');
+        document.getElementById('tps-summary').textContent = '';
+        return;
       }
 
-      const overall = zeroFallback(summary.overall_eps);
-      const overallP95 = zeroFallback(summary.overall_p95_ms);
-      const summaryEl = document.getElementById('throughput-summary');
-      summaryEl.textContent = `Sustainable EPS within SLO: ${sustainable.toFixed(2)}. Overall EPS: ${overall.toFixed(2)}; overall p95 latency: ${overallP95.toFixed(1)} ms (SLO ≤ ${slo.toFixed(1)} ms).`;
+      const margin = { top: 24, right: 20, bottom: 44, left: 60 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+
+      const x = d3.scaleBand()
+        .domain(runs.map(run => run.round ? `R${run.round}` : (run.run_id || 'Run')))
+        .range([0, chartWidth])
+        .padding(0.25);
+
+      const maxValue = d3.max(runs, run => Math.max(zeroFallback(run.overall_eps), zeroFallback(run.sustainable_eps))) || zeroFallback(average.overall_eps);
+      const y = d3.scaleLinear()
+        .domain([0, maxValue * 1.1 || 1])
+        .nice()
+        .range([chartHeight, 0]);
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(x));
+      g.append('g')
+        .call(d3.axisLeft(y));
+
+      const lineGenerator = key => d3.line()
+        .x(run => x(run.round ? `R${run.round}` : (run.run_id || 'Run')) + x.bandwidth() / 2)
+        .y(run => y(zeroFallback(run[key])));
+
+      const series = [
+        { key: 'overall_eps', color: '#4e79a7' },
+        { key: 'sustainable_eps', color: '#8cd17d' }
+      ];
+
+      series.forEach(series => {
+        g.append('path')
+          .datum(runs)
+          .attr('fill', 'none')
+          .attr('stroke', series.color)
+          .attr('stroke-width', 2)
+          .attr('d', lineGenerator(series.key));
+
+        g.selectAll(`circle.${series.key}`)
+          .data(runs)
+          .join('circle')
+          .attr('class', series.key)
+          .attr('cx', run => x(run.round ? `R${run.round}` : (run.run_id || 'Run')) + x.bandwidth() / 2)
+          .attr('cy', run => y(zeroFallback(run[series.key])))
+          .attr('r', 4)
+          .attr('fill', series.color)
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 1.2);
+
+        if (Number.isFinite(average[series.key])) {
+          g.append('line')
+            .attr('x1', 0)
+            .attr('x2', chartWidth)
+            .attr('y1', y(zeroFallback(average[series.key])))
+            .attr('y2', y(zeroFallback(average[series.key])))
+            .attr('stroke', series.color)
+            .attr('stroke-dasharray', '6,4')
+            .attr('opacity', 0.6);
+        }
+      });
+
+      const summary = document.getElementById('tps-summary');
+      summary.textContent = `Rounds: ${runs.length}. Avg overall EPS ${fmtNumber(average.overall_eps || 0)}; sustainable ${fmtNumber(average.sustainable_eps || 0)}. SLA met in ${(zeroFallback(average.sla_met || 0) * 100).toFixed(1)}% of runs.`;
     }
 
     function renderAudit(audit, summary) {

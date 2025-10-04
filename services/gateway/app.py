@@ -1,4 +1,5 @@
 import json
+import uuid
 from time import perf_counter, time
 from typing import Dict, Tuple
 from libs.c2schema import now_iso, sign_event, compute_event_id
@@ -15,7 +16,7 @@ class Gateway:
         self.secrets = secrets
         self.metrics_path = metrics_path
         self.run_started = time()
-        self.run_id = f"run-{int(self.run_started * 1000)}"
+        self.run_id = f"run-{int(self.run_started * 1000)}-{uuid.uuid4().hex[:6]}"
 
     def submit(self, event: dict) -> Tuple[str, str]:
         event.setdefault("timestamp", now_iso())
@@ -44,5 +45,5 @@ class Gateway:
             json.dump(self.contract.export_graph(), f, indent=2)
         return path
 
-    def build_reports(self, out_dir: str = "data", slo_p95_ms: float = 50.0) -> str:
-        return build_reports(self.metrics_path, self.contract, out_dir, slo_p95_ms)
+    def build_reports(self, out_dir: str = "data", slo_p95_ms: float = 50.0, rounds: int | None = None) -> str:
+        return build_reports(self.metrics_path, self.contract, out_dir, slo_p95_ms, rounds)
