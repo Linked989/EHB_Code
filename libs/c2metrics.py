@@ -1,21 +1,24 @@
 import csv, os, time
 
 class Metrics:
-    def __init__(self, path):
+    """Append-only CSV logger with fixed header."""
+
+    def __init__(self, path: str) -> None:
         self.path = path
         os.makedirs(os.path.dirname(path), exist_ok=True)
         write_header = not os.path.exists(path)
-        self.f = open(path, "a", newline="")
-        self.w = csv.writer(self.f)
+        self._f = open(path, "a", newline="")
+        self._w = csv.writer(self._f)
         if write_header:
-            self.w.writerow(["ts","event_id","event_type","action","value","extra"])
+            self._w.writerow(["ts","event_id","event_type","action","value","extra"])
+            self._f.flush()
 
-    def log(self, event_id, event_type, action, value, extra=""):
-        self.w.writerow([time.time(), event_id, event_type, action, value, extra])
-        self.f.flush()
+    def log(self, event_id: str, event_type: str, action: str, value: str, extra: str = "") -> None:
+        self._w.writerow([time.time(), event_id, event_type, action, value, extra])
+        self._f.flush()
 
-    def close(self):
+    def close(self) -> None:
         try:
-            self.f.close()
-        except:
+            self._f.close()
+        except Exception:
             pass

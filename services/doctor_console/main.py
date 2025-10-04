@@ -1,5 +1,6 @@
 from libs.c2schema import now_iso
-def emit_order(subject_id: str, actor_id: str, pubkey_id: str, parent_obs_id: str, dose_units=1.5):
+
+def emit_order(subject_id: str, actor_id: str, pubkey_id: str, parent_obs_id: str, dose_units: float = 1.5) -> dict:
     return {
         "event_type": "order",
         "subject_id": subject_id,

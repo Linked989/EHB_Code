@@ -9,7 +9,6 @@ def index():
 
 @app.route("/graph.json")
 def graph_json():
-    # Load from ../data/graph.json
     path = os.path.join(os.path.dirname(__file__), "..", "data", "graph.json")
     path = os.path.abspath(path)
     if not os.path.exists(path):

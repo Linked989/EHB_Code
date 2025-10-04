@@ -1,5 +1,6 @@
 from libs.c2schema import now_iso
-def emit_command(subject_id: str, actor_id: str, pubkey_id: str, parent_order_id: str, units=1.5):
+
+def emit_command(subject_id: str, actor_id: str, pubkey_id: str, parent_order_id: str, units: float = 1.5) -> dict:
     return {
         "event_type": "command",
         "subject_id": subject_id,
@@ -11,8 +12,7 @@ def emit_command(subject_id: str, actor_id: str, pubkey_id: str, parent_order_id
         "sig": ""
     }
 
-def emit_invalid_command(subject_id: str, actor_id: str, pubkey_id: str):
-    # No parents -> should be rejected
+def emit_invalid_command(subject_id: str, actor_id: str, pubkey_id: str) -> dict:
     return {
         "event_type": "command",
         "subject_id": subject_id,

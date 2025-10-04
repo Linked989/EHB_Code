@@ -1,13 +1,14 @@
-from typing import Dict, List, Tuple, Optional, Set
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Set
 from libs.c2schema import PARENT_RULES, actor_allowed, compute_event_id, verify_sig
 
+OK = "OK"
 ERR_MISSING_PARENT = "ERR_MISSING_PARENT"
 ERR_BAD_PARENT_TYPE = "ERR_BAD_PARENT_TYPE"
 ERR_UNAUTHORIZED = "ERR_UNAUTHORIZED"
 ERR_CYCLE = "ERR_CYCLE"
 ERR_DUPLICATE = "ERR_DUPLICATE"
-OK = "OK"
+ERR_PARENT_REQUIRED = "ERR_PARENT_REQUIRED"
 
 @dataclass
 class EventRecord:
@@ -22,12 +23,13 @@ class EventRecord:
     sig: str
 
 class MockLedger:
-    def __init__(self, secrets: Dict[str, bytes]):
-        # secrets: pubkey_id -> secret bytes (for HMAC simulation)
+    """In-memory store with causal validation."""
+
+    def __init__(self, secrets: Dict[str, bytes]) -> None:
+        self.secrets = secrets                     # pubkey_id -> secret
         self.events: Dict[str, EventRecord] = {}
-        self.secrets = secrets
-        self.types: Dict[str, str] = {}  # event_id -> event_type
-        self.children: Dict[str, List[str]] = {}
+        self.types: Dict[str, str] = {}           # event_id -> event_type
+        self.children: Dict[str, List[str]] = {}  # parent_id -> [child_ids]
 
     def exists(self, eid: str) -> bool:
         return eid in self.events
@@ -36,22 +38,19 @@ class MockLedger:
         return self.types.get(eid)
 
     def _introduces_cycle(self, eid: str, parents: List[str]) -> bool:
-        # DFS from parents to see if we can reach eid
+        """DFS from parents; if eid is reachable, adding eid creates a cycle."""
         visited: Set[str] = set()
         def dfs(x: str) -> bool:
-            if x == eid: 
-                return True
-            if x in visited: 
-                return False
+            if x == eid: return True
+            if x in visited: return False
             visited.add(x)
             for c in self.children.get(x, []):
-                if dfs(c): 
-                    return True
+                if dfs(c): return True
             return False
         return any(dfs(p) for p in parents)
 
     def add_event(self, event: dict) -> Tuple[str, Optional[str]]:
-        # Verify signature
+        """Validate and commit. Returns (status, info)."""
         pub = event["pubkey_id"]
         if pub not in self.secrets:
             return ERR_UNAUTHORIZED, "unknown_pubkey"
@@ -66,22 +65,21 @@ class MockLedger:
         if not actor_allowed(event["actor_id"], et):
             return ERR_UNAUTHORIZED, "actor_not_allowed"
 
-        # Parent checks
         parents = event.get("parent_ids", [])
+        allowed = PARENT_RULES.get(et, [])
+        if allowed and not parents:
+            return ERR_PARENT_REQUIRED, et
         for p in parents:
             if not self.exists(p):
                 return ERR_MISSING_PARENT, p
         for p in parents:
             pt = self.type_of(p)
-            allowed = PARENT_RULES.get(et, [])
             if pt not in allowed:
                 return ERR_BAD_PARENT_TYPE, f"{pt} -> {et}"
 
-        # Cycle check
         if self._introduces_cycle(eid, parents):
             return ERR_CYCLE, None
 
-        # Commit
         rec = EventRecord(
             event_id=eid,
             event_type=et,
@@ -104,10 +102,10 @@ class MockLedger:
         return self.events.get(eid)
 
     def get_ancestry(self, eid: str) -> List[str]:
-        # Walk backward choosing the first parent if multiple (for demo)
-        path = []
+        """Return root→...→eid following the first parent at each step."""
+        path: List[str] = []
+        seen: Set[str] = set()
         cur = self.events.get(eid)
-        seen = set()
         while cur and cur.event_id not in seen:
             path.append(cur.event_id)
             seen.add(cur.event_id)
@@ -117,10 +115,7 @@ class MockLedger:
                 break
         return list(reversed(path))
 
-    def export_graph(self):
+    def export_graph(self) -> dict:
         nodes = [{"id": eid, "type": rec.event_type, "actor": rec.actor_id} for eid, rec in self.events.items()]
-        links = []
-        for eid, rec in self.events.items():
-            for p in rec.parent_ids:
-                links.append({"source": p, "target": eid})
+        links = [{"source": p, "target": eid} for eid, rec in self.events.items() for p in rec.parent_ids]
         return {"nodes": nodes, "links": links}

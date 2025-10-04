@@ -2,14 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>C² Ledger DAG</title>
+  <title>C² Ledger — DAG</title>
   <style>
-    body { font-family: sans-serif; margin: 0; padding: 0; }
-    #title { padding: 12px 16px; font-size: 18px; border-bottom: 1px solid #ddd; }
-    svg { display: block; width: 100vw; height: 90vh; }
-    .node circle { stroke: #333; stroke-width: 1px; }
-    .link { stroke: #999; stroke-opacity: 0.6; }
-    .label { font-size: 12px; pointer-events: none; }
+    body { font-family: sans-serif; margin:0; }
+    #title { padding:12px 16px; border-bottom:1px solid #ddd; }
+    svg { width:100vw; height:90vh; display:block; }
+    .label { font-size:12px; }
   </style>
 </head>
 <body>
@@ -17,86 +15,30 @@
   <svg id="svg"></svg>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <script>
-    fetch('/graph.json').then(r=>r.json()).then(data => {
-      const svg = d3.select("#svg");
-      const width = window.innerWidth, height = window.innerHeight*0.9;
-
-      const color = d3.scaleOrdinal(["observation","diagnosis","order","command","outcome"],
-                                    d3.schemeCategory10);
-
-      const simulation = d3.forceSimulation(data.nodes)
-        .force("link", d3.forceLink(data.links).id(d => d.id).distance(80))
+    fetch('/graph.json').then(r=>r.json()).then(data=>{
+      const svg = d3.select("#svg"), w=window.innerWidth, h=window.innerHeight*0.9;
+      const sim = d3.forceSimulation(data.nodes)
+        .force("link", d3.forceLink(data.links).id(d=>d.id).distance(80))
         .force("charge", d3.forceManyBody().strength(-200))
-        .force("center", d3.forceCenter(width / 2, height / 2));
+        .force("center", d3.forceCenter(w/2, h/2));
 
-      const link = svg.append("g")
-        .attr("stroke", "#999")
-        .attr("stroke-opacity", 0.6)
-        .selectAll("line")
-        .data(data.links)
-        .join("line")
-        .attr("class", "link");
+      const link = svg.append("g").attr("stroke","#999").attr("stroke-opacity",0.6)
+        .selectAll("line").data(data.links).join("line");
 
-      const node = svg.append("g")
-        .attr("stroke", "#fff")
-        .attr("stroke-width", 1.5)
-        .selectAll("circle")
-        .data(data.nodes)
-        .join("circle")
-        .attr("r", 10)
-        .attr("fill", d => color(d.type))
-        .call(drag(simulation));
+      const node = svg.append("g").selectAll("circle").data(data.nodes).join("circle")
+        .attr("r",10).attr("fill","#69b3a2").call(d3.drag()
+          .on("start", e => { if(!e.active) sim.alphaTarget(0.3).restart(); e.subject.fx=e.subject.x; e.subject.fy=e.subject.y; })
+          .on("drag",  e => { e.subject.fx=e.x; e.subject.fy=e.y; })
+          .on("end",   e => { if(!e.active) sim.alphaTarget(0); e.subject.fx=null; e.subject.fy=null; }));
 
-      node.append("title")
-          .text(d => d.type + " " + d.id.slice(0,6));
+      const labels = svg.append("g").selectAll("text").data(data.nodes).join("text")
+        .attr("class","label").attr("dy",-14).text(d=>d.type);
 
-      const labels = svg.append("g")
-        .selectAll("text")
-        .data(data.nodes)
-        .join("text")
-        .attr("class", "label")
-        .text(d => d.type)
-        .attr("dy", -14);
-
-      simulation.on("tick", () => {
-        link
-          .attr("x1", d => d.source.x)
-          .attr("y1", d => d.source.y)
-          .attr("x2", d => d.target.x)
-          .attr("y2", d => d.target.y);
-
-        node
-          .attr("cx", d => d.x)
-          .attr("cy", d => d.y);
-
-        labels
-          .attr("x", d => d.x)
-          .attr("y", d => d.y);
+      sim.on("tick", ()=>{
+        link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+        node.attr("cx",d=>d.x).attr("cy",d=>d.y);
+        labels.attr("x",d=>d.x).attr("y",d=>d.y);
       });
-
-      function drag(simulation) {
-        function dragstarted(event) {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          event.subject.fx = event.subject.x;
-          event.subject.fy = event.subject.y;
-        }
-
-        function dragged(event) {
-          event.subject.fx = event.x;
-          event.subject.fy = event.y;
-        }
-
-        function dragended(event) {
-          if (!event.active) simulation.alphaTarget(0);
-          event.subject.fx = null;
-          event.subject.fy = null;
-        }
-
-        return d3.drag()
-          .on("start", dragstarted)
-          .on("drag", dragged)
-          .on("end", dragended);
-      }
     });
   </script>
 </body>
