@@ -477,7 +477,106 @@ def build_reports(
         ),
     }
 
-    summary_headers = [
+    # Dedicated CSV exports with descriptive names
+    policy_headers = [
+        "run_identifier",
+        "round_number",
+        "invalid_events_attempted",
+        "invalid_events_accepted",
+        "policy_violation_rate",
+        "valid_events_attempted",
+        "valid_events_rejected",
+        "false_rejection_rate",
+    ]
+    policy_rows = [{
+        "run_identifier": row["run_identifier"],
+        "round_number": row["round_number"],
+        "invalid_events_attempted": row["invalid_events_attempted"],
+        "invalid_events_accepted": row["invalid_events_accepted"],
+        "policy_violation_rate": row["policy_violation_rate"],
+        "valid_events_attempted": row["valid_events_attempted"],
+        "valid_events_rejected": row["valid_events_rejected"],
+        "false_rejection_rate": row["false_rejection_rate"],
+    } for row in summary_rows]
+    policy_rows.append({k: avg_summary_row[k] for k in policy_headers})
+    _write_csv(out_base / "policy_violation_rates.csv", policy_headers, policy_rows)
+
+    latency_headers = [
+        "run_identifier",
+        "round_number",
+        "event_type",
+        "samples",
+        "latency_p50_ms",
+        "latency_p90_ms",
+        "latency_p95_ms",
+        "latency_mean_ms",
+    ]
+    latency_rows_csv: List[Dict[str, object]] = []
+    for entry in latency_runs:
+        latency_rows_csv.append({
+            "run_identifier": entry.get("run_id", ""),
+            "round_number": entry.get("round", ""),
+            "event_type": entry.get("event_type"),
+            "samples": entry.get("count", 0),
+            "latency_p50_ms": entry.get("p50_ms", 0.0),
+            "latency_p90_ms": entry.get("p90_ms", 0.0),
+            "latency_p95_ms": entry.get("p95_ms", 0.0),
+            "latency_mean_ms": entry.get("mean_ms", 0.0),
+        })
+    for entry in latency_average:
+        latency_rows_csv.append({
+            "run_identifier": entry.get("run_id", "AVERAGE"),
+            "round_number": "",
+            "event_type": entry.get("event_type"),
+            "samples": entry.get("count", 0.0),
+            "latency_p50_ms": entry.get("p50_ms", 0.0),
+            "latency_p90_ms": entry.get("p90_ms", 0.0),
+            "latency_p95_ms": entry.get("p95_ms", 0.0),
+            "latency_mean_ms": entry.get("mean_ms", 0.0),
+        })
+    _write_csv(out_base / "validation_latency_by_event.csv", latency_headers, latency_rows_csv)
+
+    throughput_headers = [
+        "run_identifier",
+        "round_number",
+        "events_per_second_overall",
+        "events_per_second_sustainable",
+        "overall_latency_p95_ms",
+        "events_processed",
+        "round_duration_seconds",
+        "slo_threshold_p95_ms",
+        "slo_met",
+        "slo_compliance_ratio",
+    ]
+    throughput_rows_csv: List[Dict[str, object]] = []
+    for entry in throughput_summary_runs:
+        throughput_rows_csv.append({
+            "run_identifier": entry.get("run_id", ""),
+            "round_number": entry.get("round", ""),
+            "events_per_second_overall": entry.get("overall_eps", 0.0),
+            "events_per_second_sustainable": entry.get("sustainable_eps", 0.0),
+            "overall_latency_p95_ms": entry.get("overall_p95_ms", 0.0),
+            "events_processed": entry.get("event_count", 0.0),
+            "round_duration_seconds": entry.get("duration_s", 0.0),
+            "slo_threshold_p95_ms": entry.get("slo_p95_ms", slo_p95_ms),
+            "slo_met": bool(entry.get("sla_met", False)),
+            "slo_compliance_ratio": "",
+        })
+    throughput_rows_csv.append({
+        "run_identifier": throughput_average.get("run_id", "AVERAGE"),
+        "round_number": "",
+        "events_per_second_overall": throughput_average.get("overall_eps", 0.0),
+        "events_per_second_sustainable": throughput_average.get("sustainable_eps", 0.0),
+        "overall_latency_p95_ms": throughput_average.get("overall_p95_ms", 0.0),
+        "events_processed": throughput_average.get("event_count", 0.0),
+        "round_duration_seconds": throughput_average.get("duration_s", 0.0),
+        "slo_threshold_p95_ms": throughput_average.get("slo_p95_ms", slo_p95_ms),
+        "slo_met": "",
+        "slo_compliance_ratio": throughput_average.get("sla_met_ratio", 0.0),
+    })
+    _write_csv(out_base / "throughput_slo_summary.csv", throughput_headers, throughput_rows_csv)
+
+    overview_headers = [
         "run_identifier",
         "round_number",
         "invalid_events_attempted",
@@ -498,10 +597,10 @@ def build_reports(
         "avg_validation_latency_ms",
         "avg_simulated_delay_ms",
     ]
-    _write_csv(out_base / "round_metrics.csv", summary_headers, [*summary_rows, avg_summary_row])
+    _write_csv(out_base / "round_overview_metrics.csv", overview_headers, [*summary_rows, avg_summary_row])
 
-    _write_csv(out_base / "audit_resolution.csv", ["event_id", "event_type", "depth", "latency_ms"], audit)
-    _write_csv(out_base / "audit_summary.csv", ["avg_latency_ms", "slope_ms_per_link"], [audit_summary])
+    _write_csv(out_base / "audit_path_resolution.csv", ["event_id", "event_type", "depth", "latency_ms"], audit)
+    _write_csv(out_base / "audit_path_summary.csv", ["avg_latency_ms", "slope_ms_per_link"], [audit_summary])
 
     analytics = {
         "policy": {
