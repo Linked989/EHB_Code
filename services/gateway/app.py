@@ -1,6 +1,7 @@
 import json
+import random
 import uuid
-from time import perf_counter, time
+from time import perf_counter, time, sleep
 from typing import Dict, Tuple
 from libs.c2schema import now_iso, sign_event, compute_event_id
 from libs.c2metrics import Metrics
@@ -24,7 +25,9 @@ class Gateway:
         secret = self.secrets[event["pubkey_id"]]
         body = {k: v for k, v in event.items() if k != "sig"}
         event["sig"] = sign_event(body, secret)
+        simulated_delay = random.uniform(0.012, 0.045)
         started = perf_counter()
+        sleep(simulated_delay)
         status, info = self.contract.add_event(event)
         latency_ms = (perf_counter() - started) * 1000.0
         extra = json.dumps({
@@ -34,6 +37,7 @@ class Gateway:
             "subject_id": event.get("subject_id"),
             "run_id": self.run_id,
             "run_started": self.run_started,
+            "simulated_delay_ms": simulated_delay * 1000.0,
         })
         self.metrics.log(tmp_id, event["event_type"], "submit", status, extra)
         return status, tmp_id

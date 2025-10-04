@@ -1,38 +1,38 @@
 {
   "nodes": [
     {
-      "id": "56fc422441ae3af40f28a3aaed79e0570dba24be42a5b1fb932dca237ba77cdd",
+      "id": "24c237f2a16596b3435e97d95fa2d0852a68e3c1bfb90374a7cd175f649607a6",
       "type": "observation",
       "actor": "ECG#1"
     },
     {
-      "id": "06237e04e43c606f2c8132b68f4c41d28c237b19de0e6668b97d0ebd18d0cca7",
+      "id": "036537bb6f8f1461ed0dc76aa6086f6c2ae37e55e76103f95bdddb3b2150ea32",
       "type": "order",
       "actor": "DOCTOR#A"
     },
     {
-      "id": "11c822f8985605327934e1d2f20f029d3f816594866e7bc229787e9a8deda7ab",
+      "id": "ccb85bbd3886c66db90695ac04d31794d7a9df8f555705fe07aee2d11ae72278",
       "type": "command",
       "actor": "PUMP#7"
     },
     {
-      "id": "1807d9b721c2ba7734a13d4035d819650a9e6afb8a87aec19dd2ee485b401658",
+      "id": "20698a087b73f542377363a4715a7187c0baff4792d1a0b64884af41a470915d",
       "type": "outcome",
       "actor": "GLUCOSE#1"
     }
   ],
   "links": [
     {
-      "source": "56fc422441ae3af40f28a3aaed79e0570dba24be42a5b1fb932dca237ba77cdd",
-      "target": "06237e04e43c606f2c8132b68f4c41d28c237b19de0e6668b97d0ebd18d0cca7"
+      "source": "24c237f2a16596b3435e97d95fa2d0852a68e3c1bfb90374a7cd175f649607a6",
+      "target": "036537bb6f8f1461ed0dc76aa6086f6c2ae37e55e76103f95bdddb3b2150ea32"
     },
     {
-      "source": "06237e04e43c606f2c8132b68f4c41d28c237b19de0e6668b97d0ebd18d0cca7",
-      "target": "11c822f8985605327934e1d2f20f029d3f816594866e7bc229787e9a8deda7ab"
+      "source": "036537bb6f8f1461ed0dc76aa6086f6c2ae37e55e76103f95bdddb3b2150ea32",
+      "target": "ccb85bbd3886c66db90695ac04d31794d7a9df8f555705fe07aee2d11ae72278"
     },
     {
-      "source": "11c822f8985605327934e1d2f20f029d3f816594866e7bc229787e9a8deda7ab",
-      "target": "1807d9b721c2ba7734a13d4035d819650a9e6afb8a87aec19dd2ee485b401658"
+      "source": "ccb85bbd3886c66db90695ac04d31794d7a9df8f555705fe07aee2d11ae72278",
+      "target": "20698a087b73f542377363a4715a7187c0baff4792d1a0b64884af41a470915d"
     }
   ]
 }
