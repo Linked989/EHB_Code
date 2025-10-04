@@ -56,13 +56,23 @@
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <script>
-    const nodes = [
-      { id: 'Clinical Gateway', group: 'gateway', role: 'Gateway & Signer' },
-      { id: 'ECG Monitor', group: 'device', role: 'Observation source' },
-      { id: 'Doctor Console', group: 'device', role: 'Order entry' },
-      { id: 'Insulin Pump', group: 'device', role: 'Command executor' },
-      { id: 'Glucose Sensor', group: 'device', role: 'Outcome reporter' },
-      { id: 'Visualizer Dashboard', group: 'device', role: 'Audit client' },
+    const width = 900;
+    const height = 600;
+    const center = { x: width / 2, y: height / 2 };
+    const ringRadius = 150;
+    const gatewayRadius = 250;
+    const deviceRadius = 320;
+
+    const colors = {
+      gateway: '#4e79a7',
+      device: '#a0cbe8',
+      raspi3: '#59a14f',
+      raspi4: '#8cd17d',
+      raspi5: '#b6992d',
+      cloud: '#e15759'
+    };
+
+    const blockchainRaw = [
       { id: 'RasPi3-A', group: 'raspi3', role: 'Edge validator' },
       { id: 'RasPi3-B', group: 'raspi3', role: 'Edge validator' },
       { id: 'RasPi3-C', group: 'raspi3', role: 'Edge validator' },
@@ -78,138 +88,218 @@
       { id: 'Cloud-EU-2', group: 'cloud', role: 'Cloud validator' }
     ];
 
-    const gatewayLinks = [
-      { source: 'Clinical Gateway', target: 'ECG Monitor', type: 'device' },
-      { source: 'Clinical Gateway', target: 'Doctor Console', type: 'device' },
-      { source: 'Clinical Gateway', target: 'Insulin Pump', type: 'device' },
-      { source: 'Clinical Gateway', target: 'Glucose Sensor', type: 'device' },
-      { source: 'Clinical Gateway', target: 'Visualizer Dashboard', type: 'device' }
-    ];
+    const toRadians = (deg) => (deg * Math.PI) / 180;
+    const project = (radius, deg) => ({
+      x: center.x + Math.cos(toRadians(deg)) * radius,
+      y: center.y + Math.sin(toRadians(deg)) * radius,
+    });
 
-    const blockchainLinks = [
-      'RasPi3-A','RasPi3-B','RasPi3-C','RasPi3-D','RasPi3-E',
-      'RasPi4-A','RasPi4-B','RasPi5-A',
-      'Cloud-EU-1','Cloud-US-1','Cloud-APAC-1','Cloud-US-2','Cloud-EU-2'
-    ].map((id, idx, arr) => ({
-      source: id,
+    const blockchainNodes = blockchainRaw.map((node, idx, arr) => {
+      const angle = (360 / arr.length) * idx - 90;
+      const coords = project(ringRadius, angle);
+      return { ...node, ...coords };
+    });
+
+    const gateway = { ...project(gatewayRadius, -90), id: 'Clinical Gateway', group: 'gateway', role: 'Gateway & Signer' };
+
+    const devices = [
+      { id: 'ECG Monitor', group: 'device', role: 'Observation source', angle: -150 },
+      { id: 'Doctor Console', group: 'device', role: 'Order entry', angle: -30 },
+      { id: 'Insulin Pump', group: 'device', role: 'Command executor', angle: 30 },
+      { id: 'Glucose Sensor', group: 'device', role: 'Outcome reporter', angle: 150 },
+      { id: 'Visualizer Dashboard', group: 'device', role: 'Audit client', angle: 210 }
+    ].map(node => {
+      const coords = project(deviceRadius, node.angle);
+      return { ...node, ...coords };
+    });
+
+    const nodes = [...blockchainNodes, gateway, ...devices];
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+
+    const meshLinks = blockchainNodes.map((node, idx, arr) => ({
+      source: node,
       target: arr[(idx + 1) % arr.length],
       type: 'mesh'
     }));
 
-    const gatewayToValidators = [
-      'RasPi3-A','RasPi3-C','RasPi4-A','RasPi5-A','Cloud-US-1','Cloud-EU-1'
-    ].map(id => ({ source: 'Clinical Gateway', target: id, type: 'uplink' }));
+    const chordLinks = blockchainNodes.map((node, idx, arr) => ({
+      source: node,
+      target: arr[(idx + 3) % arr.length],
+      type: 'mesh-secondary'
+    }));
 
-    const links = [...gatewayLinks, ...blockchainLinks, ...gatewayToValidators];
+    const uplinkTargets = ['RasPi3-A', 'RasPi4-A', 'RasPi5-A', 'Cloud-US-1', 'Cloud-EU-1'];
+    const uplinks = uplinkTargets.map(id => ({
+      source: gateway,
+      target: nodeById.get(id),
+      type: 'uplink'
+    }));
 
-    const colors = {
-      gateway: '#4e79a7',
-      device: '#a0cbe8',
-      raspi3: '#59a14f',
-      raspi4: '#8cd17d',
-      raspi5: '#b6992d',
-      cloud: '#e15759'
+    const deviceLinks = devices.map(device => ({
+      source: gateway,
+      target: device,
+      type: 'device'
+    }));
+
+    const links = [...meshLinks, ...chordLinks, ...uplinks, ...deviceLinks];
+
+    const svg = d3.select('#network');
+    svg.selectAll('*').remove();
+    svg.attr('viewBox', `0 0 ${width} ${height}`).attr('preserveAspectRatio', 'xMidYMid meet');
+
+    const defs = svg.append('defs');
+
+    const marker = defs.append('marker')
+      .attr('id', 'arrowhead')
+      .attr('viewBox', '0 -5 10 10')
+      .attr('refX', 18)
+      .attr('refY', 0)
+      .attr('markerWidth', 6)
+      .attr('markerHeight', 6)
+      .attr('orient', 'auto-start-reverse');
+    marker.append('path').attr('fill', '#aeb7c6').attr('d', 'M0,-5L10,0L0,5');
+
+    createIconDefs(defs);
+
+    const linksGroup = svg.append('g').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    linksGroup.selectAll('line')
+      .data(links)
+      .join('line')
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y)
+      .attr('stroke', d => {
+        if (d.type === 'uplink') return '#4e79a7';
+        if (d.type === 'device') return '#7fa1cc';
+        return '#aeb7c6';
+      })
+      .attr('stroke-width', d => d.type === 'uplink' ? 2.6 : d.type === 'device' ? 2.2 : d.type === 'mesh' ? 1.4 : 1)
+      .attr('stroke-dasharray', d => (d.type === 'mesh' ? '6,6' : d.type === 'mesh-secondary' ? '3,8' : null))
+      .attr('marker-end', d => d.type === 'device' ? 'url(#arrowhead)' : null);
+
+    const iconSize = {
+      gateway: 68,
+      device: 48,
+      raspi3: 56,
+      raspi4: 56,
+      raspi5: 56,
+      cloud: 64
     };
 
-    renderNetwork(nodes, links, colors);
+    const nodeGroups = svg.append('g')
+      .selectAll('g.node')
+      .data(nodes)
+      .join('g')
+      .attr('class', 'node')
+      .attr('transform', d => `translate(${d.x},${d.y})`)
+      .attr('color', d => colors[d.group] || '#888');
 
-    function renderNetwork(nodes, links, colors) {
-      const svg = d3.select('#network');
-      svg.selectAll('*').remove();
-      const width = svg.node().clientWidth;
-      const height = svg.node().clientHeight;
-      svg.attr('viewBox', `0 0 ${width} ${height}`);
+    nodeGroups.append('use')
+      .attr('href', d => `#${iconForGroup(d.group)}`)
+      .attr('x', d => -(iconSize[d.group] || 48) / 2)
+      .attr('y', d => -(iconSize[d.group] || 48) / 2)
+      .attr('width', d => iconSize[d.group] || 48)
+      .attr('height', d => iconSize[d.group] || 48)
+      .attr('fill', d => colors[d.group] || '#888')
+      .attr('opacity', 0.95);
 
-      const simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id(d => d.id).distance(l => l.type === 'mesh' ? 140 : 100).strength(l => l.type === 'mesh' ? 0.15 : 0.4))
-        .force('charge', d3.forceManyBody().strength(-220))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(32));
+    nodeGroups.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', d => {
+        if (d.group === 'gateway') return 48;
+        if (d.group === 'device') return 40;
+        return 44;
+      })
+      .attr('font-size', '12px')
+      .attr('fill', '#333')
+      .text(d => d.id);
 
-      const link = svg.append('g')
-        .attr('stroke', '#bcc4d4')
-        .attr('stroke-opacity', 0.7)
-        .selectAll('line')
-        .data(links)
-        .join('line')
-        .attr('stroke-width', l => l.type === 'mesh' ? 1.5 : 2.2)
-        .attr('stroke-dasharray', l => l.type === 'mesh' ? '5,5' : null)
-        .attr('marker-end', 'url(#arrowhead)');
+    let tooltip = d3.select('#network-tooltip');
+    if (tooltip.empty()) {
+      tooltip = d3.select('body').append('div').attr('id', 'network-tooltip');
+    }
+    tooltip
+      .style('position', 'absolute')
+      .style('pointer-events', 'none')
+      .style('background', 'rgba(0,0,0,0.75)')
+      .style('color', '#fff')
+      .style('padding', '6px 10px')
+      .style('border-radius', '6px')
+      .style('font-size', '12px')
+      .style('opacity', 0);
 
-      svg.append('defs').append('marker')
-        .attr('id', 'arrowhead')
-        .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 18)
-        .attr('refY', 0)
-        .attr('markerWidth', 6)
-        .attr('markerHeight', 6)
-        .attr('orient', 'auto')
-        .append('path')
-        .attr('fill', '#bcc4d4')
-        .attr('d', 'M0,-5L10,0L0,5');
+    nodeGroups.on('mouseover', (event, d) => {
+      tooltip.style('opacity', 1)
+        .html(`<strong>${d.id}</strong><br>${d.role}`);
+    }).on('mousemove', event => {
+      tooltip.style('left', `${event.pageX + 12}px`).style('top', `${event.pageY - 24}px`);
+    }).on('mouseout', () => tooltip.style('opacity', 0));
 
-      const node = svg.append('g')
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 1.5)
-        .selectAll('circle')
-        .data(nodes)
-        .join('circle')
-        .attr('r', d => d.group === 'gateway' ? 20 : d.group === 'device' ? 14 : 16)
-        .attr('fill', d => colors[d.group] || '#999')
-        .call(d3.drag()
-          .on('start', event => { if (!event.active) simulation.alphaTarget(0.3).restart(); event.subject.fx = event.subject.x; event.subject.fy = event.subject.y; })
-          .on('drag', event => { event.subject.fx = event.x; event.subject.fy = event.y; })
-          .on('end', event => { if (!event.active) simulation.alphaTarget(0); event.subject.fx = null; event.subject.fy = null; }));
+    function iconForGroup(group) {
+      if (group === 'gateway') return 'icon-gateway';
+      if (group === 'device') return 'icon-device';
+      if (group === 'raspi3') return 'icon-raspi3';
+      if (group === 'raspi4') return 'icon-raspi4';
+      if (group === 'raspi5') return 'icon-raspi5';
+      if (group === 'cloud') return 'icon-cloud';
+      return 'icon-device';
+    }
 
-      const labels = svg.append('g')
-        .selectAll('text')
-        .data(nodes)
-        .join('text')
-        .attr('text-anchor', 'middle')
-        .attr('dy', d => d.group === 'gateway' ? 32 : 28)
-        .attr('font-size', 12)
-        .attr('fill', '#333')
-        .text(d => d.id);
+    function createIconDefs(defs) {
+      const gateway = defs.append('symbol').attr('id', 'icon-gateway').attr('viewBox', '0 0 64 64');
+      gateway.append('path')
+        .attr('d', 'M32 2 L56 16 L56 48 L32 62 L8 48 L8 16 Z')
+        .attr('fill', 'currentColor');
+      gateway.append('path')
+        .attr('d', 'M32 18 L46 26 L46 42 L32 50 L18 42 L18 26 Z')
+        .attr('fill', '#ffffff')
+        .attr('opacity', 0.9);
+      gateway.append('path')
+        .attr('d', 'M20 32 L26 32 L30 26 L36 38 L40 32 L44 32')
+        .attr('fill', 'none')
+        .attr('stroke', 'currentColor')
+        .attr('stroke-width', 3)
+        .attr('stroke-linecap', 'round')
+        .attr('stroke-linejoin', 'round');
 
-      let tooltip = d3.select('#network-tooltip');
-      if (tooltip.empty()) {
-        tooltip = d3.select('body').append('div').attr('id', 'network-tooltip');
-      }
-      tooltip
-        .style('position', 'absolute')
-        .style('pointer-events', 'none')
-        .style('background', 'rgba(0,0,0,0.75)')
-        .style('color', '#fff')
-        .style('padding', '6px 10px')
-        .style('border-radius', '6px')
-        .style('font-size', '12px')
-        .style('opacity', 0);
+      const device = defs.append('symbol').attr('id', 'icon-device').attr('viewBox', '0 0 64 64');
+      device.append('circle').attr('cx', 32).attr('cy', 32).attr('r', 30).attr('fill', 'currentColor').attr('opacity', 0.92);
+      device.append('path')
+        .attr('d', 'M12 32 H22 L26 24 L32 40 L38 26 L42 32 H52')
+        .attr('fill', 'none')
+        .attr('stroke', '#ffffff')
+        .attr('stroke-width', 4)
+        .attr('stroke-linecap', 'round')
+        .attr('stroke-linejoin', 'round');
 
-      node.on('mouseover', (event, d) => {
-        tooltip.style('opacity', 1)
-          .html(`<strong>${d.id}</strong><br>${d.role}`);
-      }).on('mousemove', event => {
-        tooltip.style('left', (event.pageX + 12) + 'px')
-          .style('top', (event.pageY - 24) + 'px');
-      }).on('mouseout', () => tooltip.style('opacity', 0));
+      const raspiBase = (id) => {
+        const sym = defs.append('symbol').attr('id', id).attr('viewBox', '0 0 64 64');
+        sym.append('rect').attr('x', 6).attr('y', 8).attr('width', 52).attr('height', 48).attr('rx', 6).attr('fill', 'currentColor').attr('opacity', 0.9);
+        sym.append('rect').attr('x', 14).attr('y', 16).attr('width', 20).attr('height', 20).attr('rx', 4).attr('fill', '#ffffff').attr('opacity', 0.9);
+        sym.append('circle').attr('cx', 44).attr('cy', 20).attr('r', 5).attr('fill', '#ffffff').attr('opacity', 0.9);
+        sym.append('circle').attr('cx', 44).attr('cy', 32).attr('r', 5).attr('fill', '#ffffff').attr('opacity', 0.9);
+        return sym;
+      };
 
-      simulation.on('tick', () => {
-        link
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
+      const raspi3 = raspiBase('icon-raspi3');
+      raspi3.append('rect').attr('x', 14).attr('y', 38).attr('width', 12).attr('height', 10).attr('rx', 2).attr('fill', '#ffffff').attr('opacity', 0.85);
 
-        node
-          .attr('cx', d => d.x)
-          .attr('cy', d => d.y);
+      const raspi4 = raspiBase('icon-raspi4');
+      raspi4.append('rect').attr('x', 28).attr('y', 38).attr('width', 16).attr('height', 10).attr('rx', 2).attr('fill', '#ffffff').attr('opacity', 0.85);
 
-        labels
-          .attr('x', d => d.x)
-          .attr('y', d => d.y);
-      });
+      const raspi5 = defs.append('symbol').attr('id', 'icon-raspi5').attr('viewBox', '0 0 64 64');
+      raspi5.append('rect').attr('x', 6).attr('y', 8).attr('width', 52).attr('height', 48).attr('rx', 6).attr('fill', 'currentColor').attr('opacity', 0.95);
+      raspi5.append('rect').attr('x', 18).attr('y', 18).attr('width', 28).attr('height', 20).attr('rx', 4).attr('fill', '#ffffff').attr('opacity', 0.9);
+      raspi5.append('rect').attr('x', 16).attr('y', 40).attr('width', 32).attr('height', 10).attr('rx', 2).attr('fill', '#ffffff').attr('opacity', 0.85);
 
-      window.addEventListener('resize', () => renderNetwork(nodes.map(n => ({...n})), links.map(l => ({...l})), colors), { once: true });
+      const cloud = defs.append('symbol').attr('id', 'icon-cloud').attr('viewBox', '0 0 64 64');
+      cloud.append('path')
+        .attr('d', 'M20 46 H48 C55 46 60 41 60 34 C60 27 55 22 48 22 C47 16 42 12 36 12 C31 12 27 14 24 18 C22 17 20 16 18 16 C11 16 6 21 6 28 C6 35 11 40 18 40 H20 Z')
+        .attr('fill', 'currentColor').attr('opacity', 0.9);
+      cloud.append('path')
+        .attr('d', 'M20 46 H48 C55 46 60 41 60 34')
+        .attr('fill', 'none').attr('stroke', '#ffffff').attr('stroke-width', 4).attr('stroke-linecap', 'round');
     }
   </script>
 </body>
