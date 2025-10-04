@@ -5,7 +5,11 @@
   <title>C² Ledger — Causal DAG</title>
   <style>
     body { font-family: sans-serif; margin:0; background:#f5f7fa; color:#222; }
-    #title { padding:14px 18px; border-bottom:1px solid #d8dde5; background:#fff; font-weight:600; }
+    #title { padding:14px 18px; border-bottom:1px solid #d8dde5; background:#fff; font-weight:600; display:flex; align-items:center; justify-content:space-between; }
+    #title nav { display:flex; gap:14px; font-weight:500; }
+    #title nav a { color:#2d4a90; text-decoration:none; padding:6px 10px; border-radius:6px; }
+    #title nav a:hover { background:#e8eefc; }
+    #title nav a.active { background:#2d4a90; color:#fff; }
     #graph-container { height:55vh; background:#fff; border-bottom:1px solid #d8dde5; }
     #dag { width:100%; height:100%; display:block; }
     .label { font-size:12px; pointer-events:none; }
@@ -20,7 +24,13 @@
   </style>
 </head>
 <body>
-  <div id="title">C² Ledger — Causal DAG</div>
+  <div id="title">
+    <span>C² Ledger — Causal DAG</span>
+    <nav>
+      <a class="active" href="/">Home</a>
+      <a href="/blockchain">Blockchain Network</a>
+    </nav>
+  </div>
   <div id="graph-container">
     <svg id="dag"></svg>
   </div>

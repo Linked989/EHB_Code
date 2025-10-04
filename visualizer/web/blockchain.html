@@ -1,0 +1,216 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>C² Ledger — Blockchain Network</title>
+  <style>
+    body { font-family: sans-serif; margin:0; background:#f5f7fa; color:#222; }
+    #title { padding:14px 18px; border-bottom:1px solid #d8dde5; background:#fff; font-weight:600; display:flex; align-items:center; justify-content:space-between; }
+    #title nav { display:flex; gap:14px; font-weight:500; }
+    #title nav a { color:#2d4a90; text-decoration:none; padding:6px 10px; border-radius:6px; }
+    #title nav a:hover { background:#e8eefc; }
+    #title nav a.active { background:#2d4a90; color:#fff; }
+    #layout { display:flex; flex-wrap:wrap; gap:18px; padding:18px; }
+    #network-card { flex:3 1 520px; background:#fff; border:1px solid #d8dde5; border-radius:8px; padding:16px; box-shadow:0 2px 4px rgba(0,0,0,0.05); }
+    #network-card h2 { margin:0 0 12px; font-size:18px; }
+    #network { width:100%; height:60vh; display:block; }
+    #summary-card { flex:2 1 280px; background:#fff; border:1px solid #d8dde5; border-radius:8px; padding:18px; box-shadow:0 2px 4px rgba(0,0,0,0.05); }
+    #summary-card h3 { margin-top:0; font-size:16px; }
+    #summary-card ul { padding-left:16px; line-height:1.6; color:#444; }
+    .legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; font-size:12px; color:#555; }
+    .legend span { display:inline-flex; align-items:center; gap:6px; }
+    .legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+  </style>
+</head>
+<body>
+  <div id="title">
+    <span>C² Ledger — Blockchain Network</span>
+    <nav>
+      <a href="/">Home</a>
+      <a class="active" href="/blockchain">Blockchain Network</a>
+    </nav>
+  </div>
+  <div id="layout">
+    <div id="network-card">
+      <h2>Distributed Ledger Footprint</h2>
+      <svg id="network"></svg>
+      <div class="legend">
+        <span><i style="background:#4e79a7"></i>Gateway</span>
+        <span><i style="background:#a0cbe8"></i>Medical Device</span>
+        <span><i style="background:#59a14f"></i>Raspberry Pi 3</span>
+        <span><i style="background:#8cd17d"></i>Raspberry Pi 4</span>
+        <span><i style="background:#b6992d"></i>Raspberry Pi 5</span>
+        <span><i style="background:#e15759"></i>Cloud Server</span>
+      </div>
+    </div>
+    <div id="summary-card">
+      <h3>Topology Quick Facts</h3>
+      <ul>
+        <li>Edge validators: five Raspberry Pi 3 nodes provide local resilience near clinical sites.</li>
+        <li>Upgraded compute: two Raspberry Pi 4 and one Raspberry Pi 5 nodes anchor higher-throughput validation.</li>
+        <li>Cloud quorum: five regionally distributed servers add redundancy and archival capacity.</li>
+        <li>Gateway bridges authorized medical devices (ECG, doctor console, insulin pump, glucose sensor, dashboard).</li>
+        <li>Devices authenticate against the gateway; only vetted actions propagate onto the blockchain mesh.</li>
+      </ul>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script>
+    const nodes = [
+      { id: 'Clinical Gateway', group: 'gateway', role: 'Gateway & Signer' },
+      { id: 'ECG Monitor', group: 'device', role: 'Observation source' },
+      { id: 'Doctor Console', group: 'device', role: 'Order entry' },
+      { id: 'Insulin Pump', group: 'device', role: 'Command executor' },
+      { id: 'Glucose Sensor', group: 'device', role: 'Outcome reporter' },
+      { id: 'Visualizer Dashboard', group: 'device', role: 'Audit client' },
+      { id: 'RasPi3-A', group: 'raspi3', role: 'Edge validator' },
+      { id: 'RasPi3-B', group: 'raspi3', role: 'Edge validator' },
+      { id: 'RasPi3-C', group: 'raspi3', role: 'Edge validator' },
+      { id: 'RasPi3-D', group: 'raspi3', role: 'Edge validator' },
+      { id: 'RasPi3-E', group: 'raspi3', role: 'Edge validator' },
+      { id: 'RasPi4-A', group: 'raspi4', role: 'Regional validator' },
+      { id: 'RasPi4-B', group: 'raspi4', role: 'Regional validator' },
+      { id: 'RasPi5-A', group: 'raspi5', role: 'High-performance validator' },
+      { id: 'Cloud-EU-1', group: 'cloud', role: 'Cloud validator' },
+      { id: 'Cloud-US-1', group: 'cloud', role: 'Cloud validator' },
+      { id: 'Cloud-APAC-1', group: 'cloud', role: 'Cloud validator' },
+      { id: 'Cloud-US-2', group: 'cloud', role: 'Cloud validator' },
+      { id: 'Cloud-EU-2', group: 'cloud', role: 'Cloud validator' }
+    ];
+
+    const gatewayLinks = [
+      { source: 'Clinical Gateway', target: 'ECG Monitor', type: 'device' },
+      { source: 'Clinical Gateway', target: 'Doctor Console', type: 'device' },
+      { source: 'Clinical Gateway', target: 'Insulin Pump', type: 'device' },
+      { source: 'Clinical Gateway', target: 'Glucose Sensor', type: 'device' },
+      { source: 'Clinical Gateway', target: 'Visualizer Dashboard', type: 'device' }
+    ];
+
+    const blockchainLinks = [
+      'RasPi3-A','RasPi3-B','RasPi3-C','RasPi3-D','RasPi3-E',
+      'RasPi4-A','RasPi4-B','RasPi5-A',
+      'Cloud-EU-1','Cloud-US-1','Cloud-APAC-1','Cloud-US-2','Cloud-EU-2'
+    ].map((id, idx, arr) => ({
+      source: id,
+      target: arr[(idx + 1) % arr.length],
+      type: 'mesh'
+    }));
+
+    const gatewayToValidators = [
+      'RasPi3-A','RasPi3-C','RasPi4-A','RasPi5-A','Cloud-US-1','Cloud-EU-1'
+    ].map(id => ({ source: 'Clinical Gateway', target: id, type: 'uplink' }));
+
+    const links = [...gatewayLinks, ...blockchainLinks, ...gatewayToValidators];
+
+    const colors = {
+      gateway: '#4e79a7',
+      device: '#a0cbe8',
+      raspi3: '#59a14f',
+      raspi4: '#8cd17d',
+      raspi5: '#b6992d',
+      cloud: '#e15759'
+    };
+
+    renderNetwork(nodes, links, colors);
+
+    function renderNetwork(nodes, links, colors) {
+      const svg = d3.select('#network');
+      svg.selectAll('*').remove();
+      const width = svg.node().clientWidth;
+      const height = svg.node().clientHeight;
+      svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+      const simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id(d => d.id).distance(l => l.type === 'mesh' ? 140 : 100).strength(l => l.type === 'mesh' ? 0.15 : 0.4))
+        .force('charge', d3.forceManyBody().strength(-220))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius(32));
+
+      const link = svg.append('g')
+        .attr('stroke', '#bcc4d4')
+        .attr('stroke-opacity', 0.7)
+        .selectAll('line')
+        .data(links)
+        .join('line')
+        .attr('stroke-width', l => l.type === 'mesh' ? 1.5 : 2.2)
+        .attr('stroke-dasharray', l => l.type === 'mesh' ? '5,5' : null)
+        .attr('marker-end', 'url(#arrowhead)');
+
+      svg.append('defs').append('marker')
+        .attr('id', 'arrowhead')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 18)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('fill', '#bcc4d4')
+        .attr('d', 'M0,-5L10,0L0,5');
+
+      const node = svg.append('g')
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 1.5)
+        .selectAll('circle')
+        .data(nodes)
+        .join('circle')
+        .attr('r', d => d.group === 'gateway' ? 20 : d.group === 'device' ? 14 : 16)
+        .attr('fill', d => colors[d.group] || '#999')
+        .call(d3.drag()
+          .on('start', event => { if (!event.active) simulation.alphaTarget(0.3).restart(); event.subject.fx = event.subject.x; event.subject.fy = event.subject.y; })
+          .on('drag', event => { event.subject.fx = event.x; event.subject.fy = event.y; })
+          .on('end', event => { if (!event.active) simulation.alphaTarget(0); event.subject.fx = null; event.subject.fy = null; }));
+
+      const labels = svg.append('g')
+        .selectAll('text')
+        .data(nodes)
+        .join('text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', d => d.group === 'gateway' ? 32 : 28)
+        .attr('font-size', 12)
+        .attr('fill', '#333')
+        .text(d => d.id);
+
+      let tooltip = d3.select('#network-tooltip');
+      if (tooltip.empty()) {
+        tooltip = d3.select('body').append('div').attr('id', 'network-tooltip');
+      }
+      tooltip
+        .style('position', 'absolute')
+        .style('pointer-events', 'none')
+        .style('background', 'rgba(0,0,0,0.75)')
+        .style('color', '#fff')
+        .style('padding', '6px 10px')
+        .style('border-radius', '6px')
+        .style('font-size', '12px')
+        .style('opacity', 0);
+
+      node.on('mouseover', (event, d) => {
+        tooltip.style('opacity', 1)
+          .html(`<strong>${d.id}</strong><br>${d.role}`);
+      }).on('mousemove', event => {
+        tooltip.style('left', (event.pageX + 12) + 'px')
+          .style('top', (event.pageY - 24) + 'px');
+      }).on('mouseout', () => tooltip.style('opacity', 0));
+
+      simulation.on('tick', () => {
+        link
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+
+        node
+          .attr('cx', d => d.x)
+          .attr('cy', d => d.y);
+
+        labels
+          .attr('x', d => d.x)
+          .attr('y', d => d.y);
+      });
+
+      window.addEventListener('resize', () => renderNetwork(nodes.map(n => ({...n})), links.map(l => ({...l})), colors), { once: true });
+    }
+  </script>
+</body>
+</html>

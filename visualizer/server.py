@@ -7,6 +7,11 @@ app = Flask(__name__, static_folder="web")
 def index():
     return send_from_directory("web", "index.html")
 
+
+@app.route("/blockchain")
+def blockchain():
+    return send_from_directory("web", "blockchain.html")
+
 @app.route("/graph.json")
 def graph_json():
     path = os.path.join(os.path.dirname(__file__), "..", "data", "graph.json")
