@@ -1,6 +1,6 @@
 {
   "policy": {
-    "invalid_attempted": 1,
+    "invalid_attempted": 5,
     "invalid_accepted": 0,
     "pv_ar": 0.0,
     "valid_attempted": 4,
@@ -10,34 +10,34 @@
   "latency": [
     {
       "event_type": "command",
-      "p50_ms": 0.009583483915776014,
-      "p90_ms": 0.011516676750034094,
-      "p95_ms": 0.011758325854316354,
-      "mean_ms": 0.009583483915776014,
-      "count": 2
+      "p50_ms": 0.0077909789979457855,
+      "p90_ms": 0.010207807645201683,
+      "p95_ms": 0.010999408550560474,
+      "mean_ms": 0.008516386151313782,
+      "count": 5
     },
     {
       "event_type": "observation",
-      "p50_ms": 0.022582942619919777,
-      "p90_ms": 0.022582942619919777,
-      "p95_ms": 0.022582942619919777,
-      "mean_ms": 0.022582942619919777,
+      "p50_ms": 0.024541979655623436,
+      "p90_ms": 0.024541979655623436,
+      "p95_ms": 0.024541979655623436,
+      "mean_ms": 0.024541979655623436,
       "count": 1
     },
     {
       "event_type": "order",
-      "p50_ms": 0.01579092349857092,
-      "p90_ms": 0.01579092349857092,
-      "p95_ms": 0.01579092349857092,
-      "mean_ms": 0.01579092349857092,
+      "p50_ms": 0.01637497916817665,
+      "p90_ms": 0.01637497916817665,
+      "p95_ms": 0.01637497916817665,
+      "mean_ms": 0.01637497916817665,
       "count": 1
     },
     {
       "event_type": "outcome",
-      "p50_ms": 0.009874929673969746,
-      "p90_ms": 0.009874929673969746,
-      "p95_ms": 0.009874929673969746,
-      "mean_ms": 0.009874929673969746,
+      "p50_ms": 0.009834067896008492,
+      "p90_ms": 0.009834067896008492,
+      "p95_ms": 0.009834067896008492,
+      "mean_ms": 0.009834067896008492,
       "count": 1
     }
   ],
@@ -45,47 +45,47 @@
     "windows": [
       {
         "window_start_s": 0.0,
-        "eps": 5.0,
-        "p95_ms": 0.021224538795650005,
-        "count": 5,
+        "eps": 9.0,
+        "p95_ms": 0.021683529485017058,
+        "count": 9,
         "sla_met": true
       }
     ],
     "summary": {
-      "sustainable_eps": 5.0,
+      "sustainable_eps": 9.0,
       "slo_p95_ms": 50.0,
-      "overall_eps": 5.0,
-      "overall_p95_ms": 0.021224538795650005
+      "overall_eps": 9.0,
+      "overall_p95_ms": 0.021683529485017058
     }
   },
   "audit": [
     {
-      "event_id": "4248ff190bf0ac5c86c903d40d821d137c288a556ce3fef417bccf4a52aaf484",
+      "event_id": "b8ea5810d56e26013219d38f80e0f7bce61ed5ce05a4a4282affb49528960ad0",
       "event_type": "observation",
       "depth": 0,
-      "latency_ms": 0.002500019036233425
+      "latency_ms": 0.0027919886633753777
     },
     {
-      "event_id": "c77692e2d90253f201b3bcfae1eb92da7019014d3eeda41d5298a39d246fa43b",
+      "event_id": "63b388e7b595b8489a3e29d7a2d45c22d3be55149751741f98a3ba5e320df75e",
       "event_type": "order",
       "depth": 1,
-      "latency_ms": 0.001750071533024311
+      "latency_ms": 0.0017499551177024841
     },
     {
-      "event_id": "bded6d057324f75764bf7c8987112872e20491e49d68a0df2d947c37d4ccab46",
+      "event_id": "7d827879f6554a8a0edc57469dcb2b2d273c19fabff735d1566b45958e50d3eb",
       "event_type": "command",
       "depth": 2,
-      "latency_ms": 0.0013329554349184036
+      "latency_ms": 0.001249951310455799
     },
     {
-      "event_id": "a2ac1d00e5e347bb851b34f1d11193890b00abe76bc9ad858b48325d402f522e",
+      "event_id": "ff5577e9f689ffb965096b6b3ae666ea337d047b0962a2735608df6f5b5418c1",
       "event_type": "outcome",
       "depth": 3,
-      "latency_ms": 0.000959029421210289
+      "latency_ms": 0.000750063918530941
     }
   ],
   "audit_summary": {
-    "avg_latency_ms": 0.0016355188563466072,
-    "slope_ms_per_link": -0.0005040084943175316
+    "avg_latency_ms": 0.0016354897525161505,
+    "slope_ms_per_link": -0.0006625778041779995
   }
 }
