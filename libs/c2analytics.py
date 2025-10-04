@@ -391,25 +391,25 @@ def build_reports(
     for metrics in policy_runs:
         run_id = metrics.get("run_id", "")
         summary_map[run_id] = {
-            "run_id": run_id,
-            "round": metrics.get("round", ""),
-            "invalid_attempted": metrics.get("invalid_attempted", 0.0),
-            "invalid_accepted": metrics.get("invalid_accepted", 0.0),
-            "pv_ar": metrics.get("pv_ar", 0.0),
-            "valid_attempted": metrics.get("valid_attempted", 0.0),
-            "valid_rejected": metrics.get("valid_rejected", 0.0),
-            "frr": metrics.get("frr", 0.0),
-            "command_p50_ms": 0.0,
-            "command_p90_ms": 0.0,
-            "command_p95_ms": 0.0,
-            "overall_eps": 0.0,
-            "sustainable_eps": 0.0,
-            "overall_p95_ms": 0.0,
-            "event_count": 0.0,
-            "duration_s": 0.0,
-            "sla_met_ratio": 0.0,
-            "avg_latency_ms": 0.0,
-            "avg_sim_delay_ms": 0.0,
+            "run_identifier": run_id,
+            "round_number": metrics.get("round", ""),
+            "invalid_events_attempted": metrics.get("invalid_attempted", 0.0),
+            "invalid_events_accepted": metrics.get("invalid_accepted", 0.0),
+            "policy_violation_rate": metrics.get("pv_ar", 0.0),
+            "valid_events_attempted": metrics.get("valid_attempted", 0.0),
+            "valid_events_rejected": metrics.get("valid_rejected", 0.0),
+            "false_rejection_rate": metrics.get("frr", 0.0),
+            "command_latency_p50_ms": 0.0,
+            "command_latency_p90_ms": 0.0,
+            "command_latency_p95_ms": 0.0,
+            "events_per_second_overall": 0.0,
+            "events_per_second_sustainable": 0.0,
+            "overall_latency_p95_ms": 0.0,
+            "events_processed": 0.0,
+            "round_duration_seconds": 0.0,
+            "slo_compliance_ratio": 0.0,
+            "avg_validation_latency_ms": 0.0,
+            "avg_simulated_delay_ms": 0.0,
         }
 
     for entry in latency_runs:
@@ -418,20 +418,20 @@ def build_reports(
         run_id = entry.get("run_id", "")
         if run_id not in summary_map:
             continue
-        summary_map[run_id]["command_p50_ms"] = entry.get("p50_ms", 0.0)
-        summary_map[run_id]["command_p90_ms"] = entry.get("p90_ms", 0.0)
-        summary_map[run_id]["command_p95_ms"] = entry.get("p95_ms", 0.0)
+        summary_map[run_id]["command_latency_p50_ms"] = entry.get("p50_ms", 0.0)
+        summary_map[run_id]["command_latency_p90_ms"] = entry.get("p90_ms", 0.0)
+        summary_map[run_id]["command_latency_p95_ms"] = entry.get("p95_ms", 0.0)
 
     for entry in throughput_summary_runs:
         run_id = entry.get("run_id", "")
         if run_id not in summary_map:
             continue
-        summary_map[run_id]["overall_eps"] = entry.get("overall_eps", 0.0)
-        summary_map[run_id]["sustainable_eps"] = entry.get("sustainable_eps", 0.0)
-        summary_map[run_id]["overall_p95_ms"] = entry.get("overall_p95_ms", 0.0)
-        summary_map[run_id]["event_count"] = entry.get("event_count", 0.0)
-        summary_map[run_id]["duration_s"] = entry.get("duration_s", 0.0)
-        summary_map[run_id]["sla_met_ratio"] = 1.0 if entry.get("sla_met") else 0.0
+        summary_map[run_id]["events_per_second_overall"] = entry.get("overall_eps", 0.0)
+        summary_map[run_id]["events_per_second_sustainable"] = entry.get("sustainable_eps", 0.0)
+        summary_map[run_id]["overall_latency_p95_ms"] = entry.get("overall_p95_ms", 0.0)
+        summary_map[run_id]["events_processed"] = entry.get("event_count", 0.0)
+        summary_map[run_id]["round_duration_seconds"] = entry.get("duration_s", 0.0)
+        summary_map[run_id]["slo_compliance_ratio"] = 1.0 if entry.get("sla_met") else 0.0
 
     for run_id, rows_for_run in run_row_lookup.items():
         summary = summary_map.get(run_id)
@@ -439,8 +439,8 @@ def build_reports(
             continue
         latency_values = [float(r.latency_ms) for r in rows_for_run if r.latency_ms is not None]
         sim_delays = [float(r.sim_delay_ms) for r in rows_for_run if r.sim_delay_ms is not None]
-        summary["avg_latency_ms"] = float(sum(latency_values) / len(latency_values)) if latency_values else 0.0
-        summary["avg_sim_delay_ms"] = float(sum(sim_delays) / len(sim_delays)) if sim_delays else 0.0
+        summary["avg_validation_latency_ms"] = float(sum(latency_values) / len(latency_values)) if latency_values else 0.0
+        summary["avg_simulated_delay_ms"] = float(sum(sim_delays) / len(sim_delays)) if sim_delays else 0.0
 
     summary_rows: List[Dict[str, object]] = []
     for metrics in policy_runs:
@@ -450,55 +450,55 @@ def build_reports(
 
     command_avg_entry = next((entry for entry in latency_average if entry.get("event_type") == "command"), None)
     avg_summary_row = {
-        "run_id": "AVERAGE",
-        "round": "",
-        "invalid_attempted": policy_average.get("invalid_attempted", 0.0),
-        "invalid_accepted": policy_average.get("invalid_accepted", 0.0),
-        "pv_ar": policy_average.get("pv_ar", 0.0),
-        "valid_attempted": policy_average.get("valid_attempted", 0.0),
-        "valid_rejected": policy_average.get("valid_rejected", 0.0),
-        "frr": policy_average.get("frr", 0.0),
-        "command_p50_ms": command_avg_entry.get("p50_ms", 0.0) if command_avg_entry else 0.0,
-        "command_p90_ms": command_avg_entry.get("p90_ms", 0.0) if command_avg_entry else 0.0,
-        "command_p95_ms": command_avg_entry.get("p95_ms", 0.0) if command_avg_entry else 0.0,
-        "overall_eps": throughput_average.get("overall_eps", 0.0),
-        "sustainable_eps": throughput_average.get("sustainable_eps", 0.0),
-        "overall_p95_ms": throughput_average.get("overall_p95_ms", 0.0),
-        "event_count": throughput_average.get("event_count", 0.0),
-        "duration_s": throughput_average.get("duration_s", 0.0),
-        "sla_met_ratio": throughput_average.get("sla_met_ratio", 0.0),
-        "avg_latency_ms": (
-            sum(float(row.get("avg_latency_ms", 0.0)) for row in summary_rows) / len(summary_rows)
+        "run_identifier": "AVERAGE",
+        "round_number": "",
+        "invalid_events_attempted": policy_average.get("invalid_attempted", 0.0),
+        "invalid_events_accepted": policy_average.get("invalid_accepted", 0.0),
+        "policy_violation_rate": policy_average.get("pv_ar", 0.0),
+        "valid_events_attempted": policy_average.get("valid_attempted", 0.0),
+        "valid_events_rejected": policy_average.get("valid_rejected", 0.0),
+        "false_rejection_rate": policy_average.get("frr", 0.0),
+        "command_latency_p50_ms": command_avg_entry.get("p50_ms", 0.0) if command_avg_entry else 0.0,
+        "command_latency_p90_ms": command_avg_entry.get("p90_ms", 0.0) if command_avg_entry else 0.0,
+        "command_latency_p95_ms": command_avg_entry.get("p95_ms", 0.0) if command_avg_entry else 0.0,
+        "events_per_second_overall": throughput_average.get("overall_eps", 0.0),
+        "events_per_second_sustainable": throughput_average.get("sustainable_eps", 0.0),
+        "overall_latency_p95_ms": throughput_average.get("overall_p95_ms", 0.0),
+        "events_processed": throughput_average.get("event_count", 0.0),
+        "round_duration_seconds": throughput_average.get("duration_s", 0.0),
+        "slo_compliance_ratio": throughput_average.get("sla_met_ratio", 0.0),
+        "avg_validation_latency_ms": (
+            sum(float(row.get("avg_validation_latency_ms", 0.0)) for row in summary_rows) / len(summary_rows)
             if summary_rows else 0.0
         ),
-        "avg_sim_delay_ms": (
-            sum(float(row.get("avg_sim_delay_ms", 0.0)) for row in summary_rows) / len(summary_rows)
+        "avg_simulated_delay_ms": (
+            sum(float(row.get("avg_simulated_delay_ms", 0.0)) for row in summary_rows) / len(summary_rows)
             if summary_rows else 0.0
         ),
     }
 
     summary_headers = [
-        "run_id",
-        "round",
-        "invalid_attempted",
-        "invalid_accepted",
-        "pv_ar",
-        "valid_attempted",
-        "valid_rejected",
-        "frr",
-        "command_p50_ms",
-        "command_p90_ms",
-        "command_p95_ms",
-        "overall_eps",
-        "sustainable_eps",
-        "overall_p95_ms",
-        "event_count",
-        "duration_s",
-        "sla_met_ratio",
-        "avg_latency_ms",
-        "avg_sim_delay_ms",
+        "run_identifier",
+        "round_number",
+        "invalid_events_attempted",
+        "invalid_events_accepted",
+        "policy_violation_rate",
+        "valid_events_attempted",
+        "valid_events_rejected",
+        "false_rejection_rate",
+        "command_latency_p50_ms",
+        "command_latency_p90_ms",
+        "command_latency_p95_ms",
+        "events_per_second_overall",
+        "events_per_second_sustainable",
+        "overall_latency_p95_ms",
+        "events_processed",
+        "round_duration_seconds",
+        "slo_compliance_ratio",
+        "avg_validation_latency_ms",
+        "avg_simulated_delay_ms",
     ]
-    _write_csv(out_base / "metrics_summary.csv", summary_headers, [*summary_rows, avg_summary_row])
+    _write_csv(out_base / "round_metrics.csv", summary_headers, [*summary_rows, avg_summary_row])
 
     _write_csv(out_base / "audit_resolution.csv", ["event_id", "event_type", "depth", "latency_ms"], audit)
     _write_csv(out_base / "audit_summary.csv", ["avg_latency_ms", "slope_ms_per_link"], [audit_summary])
@@ -521,6 +521,10 @@ def build_reports(
         "network_tps": {
             "runs": network_tps_runs,
             "average": network_tps_average,
+        },
+        "round_summary": {
+            "rows": summary_rows,
+            "average": avg_summary_row,
         },
         "audit": audit,
         "audit_summary": audit_summary,
