@@ -1,0 +1,91 @@
+{
+  "policy": {
+    "invalid_attempted": 1,
+    "invalid_accepted": 0,
+    "pv_ar": 0.0,
+    "valid_attempted": 4,
+    "valid_rejected": 0,
+    "frr": 0.0
+  },
+  "latency": [
+    {
+      "event_type": "command",
+      "p50_ms": 0.010270974598824978,
+      "p90_ms": 0.01235415693372488,
+      "p95_ms": 0.012614554725587368,
+      "mean_ms": 0.010270974598824978,
+      "count": 2
+    },
+    {
+      "event_type": "observation",
+      "p50_ms": 0.02395804040133953,
+      "p90_ms": 0.02395804040133953,
+      "p95_ms": 0.02395804040133953,
+      "mean_ms": 0.02395804040133953,
+      "count": 1
+    },
+    {
+      "event_type": "order",
+      "p50_ms": 0.01616694498807192,
+      "p90_ms": 0.01616694498807192,
+      "p95_ms": 0.01616694498807192,
+      "mean_ms": 0.01616694498807192,
+      "count": 1
+    },
+    {
+      "event_type": "outcome",
+      "p50_ms": 0.010541058145463467,
+      "p90_ms": 0.010541058145463467,
+      "p95_ms": 0.010541058145463467,
+      "mean_ms": 0.010541058145463467,
+      "count": 1
+    }
+  ],
+  "throughput": {
+    "windows": [
+      {
+        "window_start_s": 0.0,
+        "eps": 5.0,
+        "p95_ms": 0.02239982131868601,
+        "count": 5,
+        "sla_met": true
+      }
+    ],
+    "summary": {
+      "sustainable_eps": 5.0,
+      "slo_p95_ms": 50.0,
+      "overall_eps": 5.0,
+      "overall_p95_ms": 0.02239982131868601
+    }
+  },
+  "audit": [
+    {
+      "event_id": "913cd47e299c2b8a72a1b21fa385f9fa2c36e3e9e3353e2f952793a71fe49035",
+      "event_type": "observation",
+      "depth": 0,
+      "latency_ms": 0.0018749851733446121
+    },
+    {
+      "event_id": "edbf2bcc719d5b302e5a81b9e8cf84d7968aa15ab1892aa280d83f7347910e91",
+      "event_type": "order",
+      "depth": 1,
+      "latency_ms": 0.0018329592421650887
+    },
+    {
+      "event_id": "1eab11e94ceb40329d5668a5edeeb79558f96552d73930049ea82cb0ad2c6c68",
+      "event_type": "command",
+      "depth": 2,
+      "latency_ms": 0.0015420373529195786
+    },
+    {
+      "event_id": "ac47a23a1d736afc437c7e5c1d16b9be4abeede601145359a06ec9f46db7125b",
+      "event_type": "outcome",
+      "depth": 3,
+      "latency_ms": 0.0007919734343886375
+    }
+  ],
+  "audit_summary": {
+    "avg_latency_ms": 0.0015104888007044792,
+    "slope_ms_per_link": -0.0003539957106113434
+  }
+}

@@ -10,5 +10,6 @@ def emit_observation(subject_id: str, actor_id: str, pubkey_id: str,
         "parent_ids": [],
         "timestamp": now_iso(),
         "pubkey_id": pubkey_id,
-        "sig": ""
+        "sig": "",
+        "expected_valid": True,
     }

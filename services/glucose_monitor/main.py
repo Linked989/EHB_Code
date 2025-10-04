@@ -9,5 +9,6 @@ def emit_outcome(subject_id: str, actor_id: str, pubkey_id: str, parent_cmd_id: 
         "parent_ids": [parent_cmd_id],
         "timestamp": now_iso(),
         "pubkey_id": pubkey_id,
-        "sig": ""
+        "sig": "",
+        "expected_valid": True,
     }

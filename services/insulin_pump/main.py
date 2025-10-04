@@ -9,7 +9,8 @@ def emit_command(subject_id: str, actor_id: str, pubkey_id: str, parent_order_id
         "parent_ids": [parent_order_id],
         "timestamp": now_iso(),
         "pubkey_id": pubkey_id,
-        "sig": ""
+        "sig": "",
+        "expected_valid": True,
     }
 
 def emit_invalid_command(subject_id: str, actor_id: str, pubkey_id: str) -> dict:
@@ -21,5 +22,6 @@ def emit_invalid_command(subject_id: str, actor_id: str, pubkey_id: str) -> dict
         "parent_ids": [],
         "timestamp": now_iso(),
         "pubkey_id": pubkey_id,
-        "sig": ""
+        "sig": "",
+        "expected_valid": False,
     }

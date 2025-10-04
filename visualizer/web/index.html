@@ -2,44 +2,476 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>C² Ledger — DAG</title>
+  <title>C² Ledger — Causal DAG</title>
   <style>
-    body { font-family: sans-serif; margin:0; }
-    #title { padding:12px 16px; border-bottom:1px solid #ddd; }
-    svg { width:100vw; height:90vh; display:block; }
-    .label { font-size:12px; }
+    body { font-family: sans-serif; margin:0; background:#f5f7fa; color:#222; }
+    #title { padding:14px 18px; border-bottom:1px solid #d8dde5; background:#fff; font-weight:600; }
+    #graph-container { height:55vh; background:#fff; border-bottom:1px solid #d8dde5; }
+    #dag { width:100%; height:100%; display:block; }
+    .label { font-size:12px; pointer-events:none; }
+    #metrics { display:flex; flex-wrap:wrap; gap:18px; padding:18px; }
+    .metric-card { flex:1 1 320px; background:#fff; border:1px solid #d8dde5; border-radius:8px; padding:16px; box-shadow:0 2px 4px rgba(0,0,0,0.05); }
+    .metric-card h2 { margin:0 0 10px; font-size:16px; }
+    svg.chart { width:100%; height:220px; display:block; }
+    .metric-summary { font-size:13px; color:#555; margin-top:10px; line-height:1.4; }
+    .legend { font-size:12px; color:#555; margin-top:6px; display:flex; gap:12px; align-items:center; }
+    .legend span { display:inline-flex; align-items:center; gap:4px; }
+    .legend i { width:12px; height:12px; display:inline-block; border-radius:2px; }
   </style>
 </head>
 <body>
   <div id="title">C² Ledger — Causal DAG</div>
-  <svg id="svg"></svg>
+  <div id="graph-container">
+    <svg id="dag"></svg>
+  </div>
+  <div id="metrics">
+    <div class="metric-card">
+      <h2>Policy Safety</h2>
+      <svg id="policy-chart" class="chart"></svg>
+      <div class="metric-summary" id="policy-summary"></div>
+    </div>
+    <div class="metric-card">
+      <h2>Validation Latency</h2>
+      <svg id="latency-chart" class="chart"></svg>
+      <div class="legend">
+        <span><i style="background:#4e79a7;"></i>p50</span>
+        <span><i style="background:#f28e2b;"></i>p90</span>
+      </div>
+      <div class="metric-summary" id="latency-summary"></div>
+    </div>
+    <div class="metric-card">
+      <h2>Throughput vs SLO</h2>
+      <svg id="throughput-chart" class="chart"></svg>
+      <div class="legend">
+        <span><i style="background:#8cd17d;"></i>SLA Met</span>
+        <span><i style="background:#e15759;"></i>SLA Breached</span>
+      </div>
+      <div class="metric-summary" id="throughput-summary"></div>
+    </div>
+    <div class="metric-card">
+      <h2>Audit Path Resolution</h2>
+      <svg id="audit-chart" class="chart"></svg>
+      <div class="metric-summary" id="audit-summary"></div>
+    </div>
+  </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <script>
-    fetch('/graph.json').then(r=>r.json()).then(data=>{
-      const svg = d3.select("#svg"), w=window.innerWidth, h=window.innerHeight*0.9;
-      const sim = d3.forceSimulation(data.nodes)
-        .force("link", d3.forceLink(data.links).id(d=>d.id).distance(80))
-        .force("charge", d3.forceManyBody().strength(-200))
-        .force("center", d3.forceCenter(w/2, h/2));
+    const zeroFallback = value => Number.isFinite(value) ? value : 0;
 
-      const link = svg.append("g").attr("stroke","#999").attr("stroke-opacity",0.6)
-        .selectAll("line").data(data.links).join("line");
-
-      const node = svg.append("g").selectAll("circle").data(data.nodes).join("circle")
-        .attr("r",10).attr("fill","#69b3a2").call(d3.drag()
-          .on("start", e => { if(!e.active) sim.alphaTarget(0.3).restart(); e.subject.fx=e.subject.x; e.subject.fy=e.subject.y; })
-          .on("drag",  e => { e.subject.fx=e.x; e.subject.fy=e.y; })
-          .on("end",   e => { if(!e.active) sim.alphaTarget(0); e.subject.fx=null; e.subject.fy=null; }));
-
-      const labels = svg.append("g").selectAll("text").data(data.nodes).join("text")
-        .attr("class","label").attr("dy",-14).text(d=>d.type);
-
-      sim.on("tick", ()=>{
-        link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
-        node.attr("cx",d=>d.x).attr("cy",d=>d.y);
-        labels.attr("x",d=>d.x).attr("y",d=>d.y);
-      });
+    Promise.all([
+      fetch('/graph.json').then(r => r.json()),
+      fetch('/analytics.json').then(r => r.json())
+    ]).then(([graph, analytics]) => {
+      renderGraph(graph || {nodes:[], links:[]});
+      renderPolicy(analytics.policy || {});
+      renderLatency(analytics.latency || []);
+      renderThroughput(analytics.throughput || {});
+      renderAudit(analytics.audit || [], analytics.audit_summary || {});
+    }).catch(err => {
+      console.error('Failed to load data', err);
     });
+
+    function renderGraph(data) {
+      const svg = d3.select('#dag');
+      svg.selectAll('*').remove();
+      const node = svg.node();
+      const width = node ? node.clientWidth : window.innerWidth;
+      const height = node ? node.clientHeight : window.innerHeight * 0.55;
+      svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+      const nodes = (data.nodes || []).map(d => ({ ...d }));
+      const links = (data.links || []).map(d => ({ ...d }));
+
+      if (!nodes.length) {
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', height / 2)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#888')
+          .text('No events yet');
+        return;
+      }
+
+      const sim = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id(d => d.id).distance(90))
+        .force('charge', d3.forceManyBody().strength(-220))
+        .force('center', d3.forceCenter(width / 2, height / 2));
+
+      const link = svg.append('g')
+        .attr('stroke', '#bcc4d4')
+        .attr('stroke-opacity', 0.7)
+        .selectAll('line')
+        .data(links)
+        .join('line')
+        .attr('stroke-width', 1.5);
+
+      const color = d3.scaleOrdinal()
+        .domain(['observation', 'diagnosis', 'order', 'command', 'outcome'])
+        .range(['#4e79a7', '#76b7b2', '#59a14f', '#edc948', '#e15759']);
+
+      const nodeEl = svg.append('g')
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 1.5)
+        .selectAll('circle')
+        .data(nodes)
+        .join('circle')
+        .attr('r', 12)
+        .attr('fill', d => color(d.type))
+        .call(d3.drag()
+          .on('start', event => { if (!event.active) sim.alphaTarget(0.3).restart(); event.subject.fx = event.subject.x; event.subject.fy = event.subject.y; })
+          .on('drag', event => { event.subject.fx = event.x; event.subject.fy = event.y; })
+          .on('end', event => { if (!event.active) sim.alphaTarget(0); event.subject.fx = null; event.subject.fy = null; }));
+
+      const labels = svg.append('g')
+        .selectAll('text')
+        .data(nodes)
+        .join('text')
+        .attr('class', 'label')
+        .attr('dy', -16)
+        .attr('text-anchor', 'middle')
+        .text(d => d.type);
+
+      sim.on('tick', () => {
+        link
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+        nodeEl
+          .attr('cx', d => d.x)
+          .attr('cy', d => d.y);
+        labels
+          .attr('x', d => d.x)
+          .attr('y', d => d.y);
+      });
+    }
+
+    function renderPolicy(policy) {
+      const svg = d3.select('#policy-chart');
+      svg.selectAll('*').remove();
+      const node = svg.node();
+      const width = node ? node.clientWidth : 320;
+      const height = node ? node.clientHeight : 200;
+      svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+      const data = [
+        { label: 'PV-AR', value: zeroFallback(policy.pv_ar) * 100 },
+        { label: 'FRR', value: zeroFallback(policy.frr) * 100 }
+      ];
+
+      const margin = { top: 20, right: 16, bottom: 36, left: 44 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+
+      const maxValue = Math.max(1, d3.max(data, d => d.value) || 0);
+
+      const x = d3.scaleBand()
+        .domain(data.map(d => d.label))
+        .range([0, chartWidth])
+        .padding(0.4);
+
+      const y = d3.scaleLinear()
+        .domain([0, maxValue])
+        .nice()
+        .range([chartHeight, 0]);
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(x));
+
+      g.append('g')
+        .call(d3.axisLeft(y).ticks(5).tickFormat(d => d + '%'));
+
+      g.append('line')
+        .attr('x1', 0)
+        .attr('x2', chartWidth)
+        .attr('y1', y(0))
+        .attr('y2', y(0))
+        .attr('stroke', '#888')
+        .attr('stroke-dasharray', '4,4');
+
+      g.selectAll('.bar')
+        .data(data)
+        .join('rect')
+        .attr('class', 'bar')
+        .attr('x', d => x(d.label))
+        .attr('y', d => y(d.value))
+        .attr('width', x.bandwidth())
+        .attr('height', d => chartHeight - y(d.value))
+        .attr('fill', '#4e79a7');
+
+      g.selectAll('.label')
+        .data(data)
+        .join('text')
+        .attr('x', d => x(d.label) + x.bandwidth() / 2)
+        .attr('y', d => y(d.value) - 6)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 12)
+        .attr('fill', '#333')
+        .text(d => d.value.toFixed(2) + '%');
+
+      const summary = document.getElementById('policy-summary');
+      const invalidAttempted = policy.invalid_attempted ?? 0;
+      const invalidAccepted = policy.invalid_accepted ?? 0;
+      const validAttempted = policy.valid_attempted ?? 0;
+      const validRejected = policy.valid_rejected ?? 0;
+      summary.textContent = `Invalid attempts: ${invalidAttempted}, accepted: ${invalidAccepted}. Valid attempts: ${validAttempted}, rejected: ${validRejected}. Target PV-AR = 0%.`;
+    }
+
+    function renderLatency(latency) {
+      const svg = d3.select('#latency-chart');
+      svg.selectAll('*').remove();
+      const node = svg.node();
+      const width = node ? node.clientWidth : 320;
+      const height = node ? node.clientHeight : 200;
+      svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+      if (!latency.length) {
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', height / 2)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#888')
+          .text('No latency samples yet');
+        document.getElementById('latency-summary').textContent = '';
+        return;
+      }
+
+      const metrics = latency.map(entry => ({
+        event_type: entry.event_type,
+        p50_ms: zeroFallback(entry.p50_ms),
+        p90_ms: zeroFallback(entry.p90_ms)
+      }));
+
+      const margin = { top: 20, right: 16, bottom: 42, left: 48 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+
+      const x0 = d3.scaleBand()
+        .domain(metrics.map(d => d.event_type))
+        .range([0, chartWidth])
+        .padding(0.25);
+
+      const keys = ['p50_ms', 'p90_ms'];
+      const x1 = d3.scaleBand()
+        .domain(keys)
+        .range([0, x0.bandwidth()])
+        .padding(0.15);
+
+      const maxValue = d3.max(metrics, d => Math.max(d.p50_ms, d.p90_ms)) || 1;
+      const y = d3.scaleLinear()
+        .domain([0, maxValue])
+        .nice()
+        .range([chartHeight, 0]);
+
+      const color = d3.scaleOrdinal()
+        .domain(keys)
+        .range(['#4e79a7', '#f28e2b']);
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(x0));
+
+      g.append('g')
+        .call(d3.axisLeft(y).ticks(5));
+
+      const groups = g.selectAll('g.layer')
+        .data(metrics)
+        .join('g')
+        .attr('transform', d => `translate(${x0(d.event_type)},0)`);
+
+      groups.selectAll('rect')
+        .data(d => keys.map(key => ({ key, value: d[key] })))
+        .join('rect')
+        .attr('x', d => x1(d.key))
+        .attr('y', d => y(d.value))
+        .attr('width', x1.bandwidth())
+        .attr('height', d => chartHeight - y(d.value))
+        .attr('fill', d => color(d.key));
+
+      groups.selectAll('text')
+        .data(d => keys.map(key => ({ key, value: d[key] })))
+        .join('text')
+        .attr('x', d => x1(d.key) + x1.bandwidth() / 2)
+        .attr('y', d => y(d.value) - 6)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 11)
+        .text(d => d.value.toFixed(1));
+
+      const summary = document.getElementById('latency-summary');
+      const maxP90 = d3.max(metrics, d => d.p90_ms) || 0;
+      summary.textContent = `p90 range: 0 – ${maxP90.toFixed(1)} ms. Aim to keep commands within your SLO.`;
+    }
+
+    function renderThroughput(throughput) {
+      const svg = d3.select('#throughput-chart');
+      svg.selectAll('*').remove();
+      const node = svg.node();
+      const width = node ? node.clientWidth : 320;
+      const height = node ? node.clientHeight : 200;
+      svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+      const windows = throughput.windows || [];
+      const summary = throughput.summary || {};
+      const slo = zeroFallback(summary.slo_p95_ms) || 50;
+
+      if (!windows.length) {
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', height / 2)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#888')
+          .text('No throughput samples yet');
+        document.getElementById('throughput-summary').textContent = `SLO (p95) = ${slo.toFixed(1)} ms.`;
+        return;
+      }
+
+      const margin = { top: 20, right: 16, bottom: 40, left: 54 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+
+      const maxTime = d3.max(windows, d => d.window_start_s) + 1;
+      const maxEps = d3.max(windows, d => d.eps) || 1;
+
+      const x = d3.scaleLinear()
+        .domain([0, maxTime])
+        .range([0, chartWidth]);
+
+      const y = d3.scaleLinear()
+        .domain([0, maxEps])
+        .nice()
+        .range([chartHeight, 0]);
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(x).ticks(windows.length));
+
+      g.append('g')
+        .call(d3.axisLeft(y));
+
+      const line = d3.line()
+        .x(d => x(d.window_start_s + 0.5))
+        .y(d => y(d.eps))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(windows)
+        .attr('fill', 'none')
+        .attr('stroke', '#4e79a7')
+        .attr('stroke-width', 2)
+        .attr('d', line);
+
+      g.selectAll('circle')
+        .data(windows)
+        .join('circle')
+        .attr('cx', d => x(d.window_start_s + 0.5))
+        .attr('cy', d => y(d.eps))
+        .attr('r', 5)
+        .attr('fill', d => d.sla_met ? '#8cd17d' : '#e15759')
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 1.5);
+
+      const sustainable = zeroFallback(summary.sustainable_eps);
+      if (sustainable > 0) {
+        g.append('line')
+          .attr('x1', 0)
+          .attr('x2', chartWidth)
+          .attr('y1', y(sustainable))
+          .attr('y2', y(sustainable))
+          .attr('stroke', '#8cd17d')
+          .attr('stroke-dasharray', '6,4');
+      }
+
+      const overall = zeroFallback(summary.overall_eps);
+      const overallP95 = zeroFallback(summary.overall_p95_ms);
+      const summaryEl = document.getElementById('throughput-summary');
+      summaryEl.textContent = `Sustainable EPS within SLO: ${sustainable.toFixed(2)}. Overall EPS: ${overall.toFixed(2)}; overall p95 latency: ${overallP95.toFixed(1)} ms (SLO ≤ ${slo.toFixed(1)} ms).`;
+    }
+
+    function renderAudit(audit, summary) {
+      const svg = d3.select('#audit-chart');
+      svg.selectAll('*').remove();
+      const node = svg.node();
+      const width = node ? node.clientWidth : 320;
+      const height = node ? node.clientHeight : 200;
+      svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+      if (!audit.length) {
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', height / 2)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#888')
+          .text('No audit samples yet');
+        document.getElementById('audit-summary').textContent = '';
+        return;
+      }
+
+      const margin = { top: 20, right: 16, bottom: 42, left: 54 };
+      const chartWidth = width - margin.left - margin.right;
+      const chartHeight = height - margin.top - margin.bottom;
+
+      const maxDepth = d3.max(audit, d => d.depth) || 1;
+      const maxLatency = d3.max(audit, d => d.latency_ms) || 1;
+
+      const x = d3.scaleLinear()
+        .domain([0, maxDepth])
+        .range([0, chartWidth]);
+
+      const y = d3.scaleLinear()
+        .domain([0, maxLatency])
+        .nice()
+        .range([chartHeight, 0]);
+
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      g.append('g')
+        .attr('transform', `translate(0,${chartHeight})`)
+        .call(d3.axisBottom(x).ticks(maxDepth));
+
+      g.append('g')
+        .call(d3.axisLeft(y));
+
+      g.append('g')
+        .selectAll('circle')
+        .data(audit)
+        .join('circle')
+        .attr('cx', d => x(d.depth))
+        .attr('cy', d => y(d.latency_ms))
+        .attr('r', 5)
+        .attr('fill', '#59a14f')
+        .attr('opacity', 0.85);
+
+      const slope = zeroFallback(summary.slope_ms_per_link);
+      const avgDepth = d3.mean(audit, d => d.depth) || 0;
+      const avgLatency = zeroFallback(summary.avg_latency_ms || d3.mean(audit, d => d.latency_ms));
+      const intercept = avgLatency - slope * avgDepth;
+      const linePoints = [
+        { depth: 0, latency_ms: Math.max(0, intercept) },
+        { depth: maxDepth, latency_ms: Math.max(0, intercept + slope * maxDepth) }
+      ];
+
+      const line = d3.line()
+        .x(d => x(d.depth))
+        .y(d => y(d.latency_ms));
+
+      g.append('path')
+        .datum(linePoints)
+        .attr('fill', 'none')
+        .attr('stroke', '#4e79a7')
+        .attr('stroke-dasharray', '6,4')
+        .attr('stroke-width', 2)
+        .attr('d', line);
+
+      const summaryEl = document.getElementById('audit-summary');
+      summaryEl.textContent = `Avg query time: ${avgLatency.toFixed(3)} ms. Slope: ${slope.toFixed(3)} ms/link (lower is better).`;
+    }
   </script>
 </body>
 </html>

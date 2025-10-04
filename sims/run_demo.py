@@ -50,7 +50,9 @@ def main():
     # Export graph
     path = gw.export_graph("data/graph.json")
     print("Graph exported to", path)
+    analytics = gw.build_reports("data")
     print("Metrics at data/metrics.csv")
+    print("Analytics at", analytics)
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,38 @@
+{
+  "nodes": [
+    {
+      "id": "913cd47e299c2b8a72a1b21fa385f9fa2c36e3e9e3353e2f952793a71fe49035",
+      "type": "observation",
+      "actor": "ECG#1"
+    },
+    {
+      "id": "edbf2bcc719d5b302e5a81b9e8cf84d7968aa15ab1892aa280d83f7347910e91",
+      "type": "order",
+      "actor": "DOCTOR#A"
+    },
+    {
+      "id": "1eab11e94ceb40329d5668a5edeeb79558f96552d73930049ea82cb0ad2c6c68",
+      "type": "command",
+      "actor": "PUMP#7"
+    },
+    {
+      "id": "ac47a23a1d736afc437c7e5c1d16b9be4abeede601145359a06ec9f46db7125b",
+      "type": "outcome",
+      "actor": "GLUCOSE#1"
+    }
+  ],
+  "links": [
+    {
+      "source": "913cd47e299c2b8a72a1b21fa385f9fa2c36e3e9e3353e2f952793a71fe49035",
+      "target": "edbf2bcc719d5b302e5a81b9e8cf84d7968aa15ab1892aa280d83f7347910e91"
+    },
+    {
+      "source": "edbf2bcc719d5b302e5a81b9e8cf84d7968aa15ab1892aa280d83f7347910e91",
+      "target": "1eab11e94ceb40329d5668a5edeeb79558f96552d73930049ea82cb0ad2c6c68"
+    },
+    {
+      "source": "1eab11e94ceb40329d5668a5edeeb79558f96552d73930049ea82cb0ad2c6c68",
+      "target": "ac47a23a1d736afc437c7e5c1d16b9be4abeede601145359a06ec9f46db7125b"
+    }
+  ]
+}

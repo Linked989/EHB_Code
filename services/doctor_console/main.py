@@ -9,5 +9,6 @@ def emit_order(subject_id: str, actor_id: str, pubkey_id: str, parent_obs_id: st
         "parent_ids": [parent_obs_id],
         "timestamp": now_iso(),
         "pubkey_id": pubkey_id,
-        "sig": ""
+        "sig": "",
+        "expected_valid": True,
     }

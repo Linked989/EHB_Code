@@ -16,5 +16,26 @@ def graph_json():
     with open(path) as f:
         return jsonify(json.load(f))
 
+
+@app.route("/analytics.json")
+def analytics_json():
+    path = os.path.join(os.path.dirname(__file__), "..", "data", "analytics.json")
+    path = os.path.abspath(path)
+    if not os.path.exists(path):
+        return jsonify({
+            "policy": {},
+            "latency": [],
+            "throughput": {"windows": [], "summary": {}},
+            "audit": [],
+        })
+    with open(path) as f:
+        return jsonify(json.load(f))
+
+
+@app.route("/data/<path:filename>")
+def data_files(filename: str):
+    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+    return send_from_directory(data_dir, filename)
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5005, debug=False)
